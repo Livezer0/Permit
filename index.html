@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Permit to Work &mdash; Task Risk Assessment</title>
+  <meta name="description" content="A Permit to Work (PTW) system with integrated task risk assessment." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">&#9888;</span>
+      <div>
+        <h1>Permit to Work</h1>
+        <p class="brand-sub">Safe systems of work &amp; task risk assessment</p>
+      </div>
+    </div>
+    <nav class="top-nav">
+      <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+      <button class="nav-btn" data-view="editor">New Permit</button>
+    </nav>
+  </header>
+
+  <main id="app">
+    <!-- Dashboard -->
+    <section id="view-dashboard" class="view active">
+      <div class="view-head">
+        <div>
+          <h2>Permit Register</h2>
+          <p class="muted">All permits to work, their status and risk level.</p>
+        </div>
+        <button class="btn primary" data-action="new-permit">+ New Permit</button>
+      </div>
+
+      <div class="stat-row" id="stat-row"></div>
+
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Search by title, permit no, location, applicant&hellip;" />
+        <select id="filter-status">
+          <option value="">All statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Submitted">Submitted</option>
+          <option value="Approved">Approved</option>
+          <option value="Active">Active</option>
+          <option value="Suspended">Suspended</option>
+          <option value="Closed">Closed</option>
+        </select>
+        <select id="filter-type">
+          <option value="">All types</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table id="permit-table">
+          <thead>
+            <tr>
+              <th>Permit No.</th>
+              <th>Title</th>
+              <th>Type</th>
+              <th>Location</th>
+              <th>Valid</th>
+              <th>Residual Risk</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="permit-tbody"></tbody>
+        </table>
+        <p id="empty-state" class="empty-state hidden">No permits yet. Create your first permit to work.</p>
+      </div>
+    </section>
+
+    <!-- Editor -->
+    <section id="view-editor" class="view">
+      <div class="view-head">
+        <div>
+          <h2 id="editor-title">New Permit to Work</h2>
+          <p class="muted" id="editor-permitno"></p>
+        </div>
+        <div class="head-actions">
+          <button class="btn ghost" data-action="cancel-edit">Back</button>
+          <button class="btn primary" data-action="save-permit">Save Permit</button>
+        </div>
+      </div>
+
+      <form id="permit-form" autocomplete="off">
+        <!-- 1. Details -->
+        <fieldset class="card">
+          <legend>1. Permit Details</legend>
+          <div class="grid">
+            <label>Permit Title
+              <input type="text" name="title" required placeholder="e.g. Replace pump motor in Plant Room B" />
+            </label>
+            <label>Permit Type
+              <select name="type" required>
+                <option value="">Select&hellip;</option>
+                <option>General Work</option>
+                <option>Hot Work</option>
+                <option>Confined Space Entry</option>
+                <option>Working at Height</option>
+                <option>Electrical / Isolation</option>
+                <option>Excavation</option>
+                <option>Lifting Operation</option>
+              </select>
+            </label>
+            <label>Location
+              <input type="text" name="location" required placeholder="Building / area / equipment" />
+            </label>
+            <label>Applicant (Performing Authority)
+              <input type="text" name="applicant" required placeholder="Name of person doing the work" />
+            </label>
+            <label>Company / Contractor
+              <input type="text" name="company" placeholder="Organisation" />
+            </label>
+            <label>Number of personnel
+              <input type="number" name="personnel" min="1" value="1" />
+            </label>
+            <label>Valid From
+              <input type="datetime-local" name="validFrom" required />
+            </label>
+            <label>Valid To
+              <input type="datetime-local" name="validTo" required />
+            </label>
+          </div>
+          <label class="full">Description of Work
+            <textarea name="description" rows="3" placeholder="Describe the task to be carried out&hellip;"></textarea>
+          </label>
+        </fieldset>
+
+        <!-- 2. Hazards -->
+        <fieldset class="card">
+          <legend>2. Hazard Identification</legend>
+          <p class="muted small">Tick the hazards present. These inform the risk assessment below.</p>
+          <div class="chips" id="hazard-chips"></div>
+        </fieldset>
+
+        <!-- 3. Risk Assessment -->
+        <fieldset class="card">
+          <legend>3. Task Risk Assessment</legend>
+          <p class="muted small">
+            Break the task into steps. For each, score the <strong>initial risk</strong>
+            (Likelihood &times; Severity, 1&ndash;5 each), add control measures, then score the
+            <strong>residual risk</strong> after those controls.
+          </p>
+          <div class="table-wrap">
+            <table class="ra-table">
+              <thead>
+                <tr>
+                  <th style="width:22%">Task Step / Hazard</th>
+                  <th title="Likelihood 1-5">L</th>
+                  <th title="Severity 1-5">S</th>
+                  <th>Initial Risk</th>
+                  <th style="width:30%">Control Measures</th>
+                  <th title="Residual Likelihood 1-5">L</th>
+                  <th title="Residual Severity 1-5">S</th>
+                  <th>Residual Risk</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="ra-tbody"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn ghost small" data-action="add-ra-row">+ Add task step</button>
+
+          <div class="ra-summary">
+            <div>
+              <span class="muted small">Highest initial risk</span>
+              <span id="summary-initial" class="risk-badge">&ndash;</span>
+            </div>
+            <div>
+              <span class="muted small">Highest residual risk</span>
+              <span id="summary-residual" class="risk-badge">&ndash;</span>
+            </div>
+          </div>
+
+          <details class="matrix-help">
+            <summary>Risk matrix &amp; scoring guide</summary>
+            <div class="matrix-help-body" id="matrix-help-body"></div>
+          </details>
+        </fieldset>
+
+        <!-- 4. Authorisation -->
+        <fieldset class="card">
+          <legend>4. Authorisation &amp; Status</legend>
+          <div class="grid">
+            <label>Status
+              <select name="status">
+                <option>Draft</option>
+                <option>Submitted</option>
+                <option>Approved</option>
+                <option>Active</option>
+                <option>Suspended</option>
+                <option>Closed</option>
+              </select>
+            </label>
+            <label>Issuing Authority (approver)
+              <input type="text" name="approver" placeholder="Name of authorised issuer" />
+            </label>
+            <label>PPE required
+              <input type="text" name="ppe" placeholder="e.g. Hard hat, gloves, eye protection" />
+            </label>
+            <label>Emergency / first-aid arrangements
+              <input type="text" name="emergency" placeholder="e.g. Nearest first-aider, muster point" />
+            </label>
+          </div>
+          <label class="full">Sign-off notes
+            <textarea name="notes" rows="2" placeholder="Conditions of approval, handover notes&hellip;"></textarea>
+          </label>
+          <div class="ack">
+            <label class="check">
+              <input type="checkbox" name="ack" />
+              I confirm the hazards have been assessed and adequate control measures are in place.
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="form-footer">
+          <button type="button" class="btn danger ghost" data-action="delete-permit" id="delete-btn">Delete</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn ghost" data-action="cancel-edit">Cancel</button>
+          <button type="button" class="btn primary" data-action="save-permit">Save Permit</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
