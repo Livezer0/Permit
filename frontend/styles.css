@@ -164,6 +164,7 @@ tbody tr.clickable:hover { background: var(--bg-2); }
 .pill.Approved { color: #67d39a; background: #173a2a; }
 .pill.Active { color: #aef0c6; background: #14502f; border-color: #1d6a40; }
 .pill.Suspended { color: #f1c97a; background: #4a3a14; }
+.pill.Cancelled { color: #f1a1a4; background: #4a1417; }
 .pill.Closed { color: #9aa6b4; background: #232c39; }
 
 /* Risk badges */
@@ -180,8 +181,10 @@ tbody tr.clickable:hover { background: var(--bg-2); }
 }
 .risk-badge.low { background: var(--risk-low); color: #06210f; }
 .risk-badge.med { background: var(--risk-med); color: #2a1f00; }
+.risk-badge.moderate { background: var(--risk-med); color: #2a1f00; }
 .risk-badge.high { background: var(--risk-high); color: #2a1500; }
 .risk-badge.extreme { background: var(--risk-extreme); color: #2a0608; }
+.risk-badge.critical { background: var(--risk-extreme); color: #2a0608; }
 
 /* Forms / cards */
 .card {
@@ -200,8 +203,31 @@ tbody tr.clickable:hover { background: var(--bg-2); }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 label input, label select, label textarea { color: var(--text); }
-label.full { grid-column: 1 / -1; margin-top: 14px; }
-.card > label.full:first-of-type { margin-top: 0; }
+label.full { grid-column: 1 / -1; }
+.field-label { font-size: 13px; color: var(--muted); }
+.hint { color: #6f8197; font-weight: 400; }
+
+/* Sub-cards (parties / people) */
+.card.sub { background: var(--panel-2); padding: 14px; margin: 0 0 12px; }
+.card.sub legend { font-size: 13px; font-weight: 600; }
+.party-grid { grid-template-columns: repeat(4, 1fr); }
+.sub-head { margin: 18px 0 8px; font-size: 14px; }
+
+/* Radio groups (Yes / No / N/A) */
+.radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+.radio {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; font-size: 13px; color: var(--text); background: var(--panel-2);
+}
+.radio input { width: auto; }
+.radio.on { border-color: var(--primary); background: rgba(47,109,246,.16); }
+
+/* HRV summary box */
+.hrv-box {
+  margin-top: 14px; padding: 14px; border: 1px dashed var(--border);
+  border-radius: 10px; display: flex; flex-direction: column; gap: 6px; background: var(--bg-2);
+}
 
 /* Chips */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }

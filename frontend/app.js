@@ -1,52 +1,86 @@
-/* Permit to Work — Task Risk Assessment
- * Frontend SPA. Talks to the backend REST API; the database lives server-side. */
+/* Permit to Work & Task Risk Assessment — frontend SPA.
+ * Modelled on the PTW and TRA forms. Talks to the backend REST API. */
 (function () {
   "use strict";
 
   const API = (window.PTW_API_BASE || "http://localhost:4000") + "/api";
 
-  const HAZARDS = [
-    "Working at height", "Hot work / fire", "Confined space", "Electricity",
-    "Stored energy", "Hazardous substances", "Manual handling", "Noise",
-    "Falling objects", "Moving machinery", "Slips, trips & falls", "Excavation",
-    "Lifting operations", "Pressure systems", "Asbestos", "Lone working"
-  ];
+  /* ---------- Fallback domain model (overridden by /api/meta) ---------- */
+  let META = {
+    riskLevels: [
+      { key: "low", label: "Low", min: 1, max: 4, color: "#30a46c", authority: "Operations Superintendent / Supervisor" },
+      { key: "moderate", label: "Moderate", min: 5, max: 9, color: "#d9a514", authority: "Operations Head" },
+      { key: "high", label: "High", min: 10, max: 14, color: "#e8801c", authority: "Facility Head" },
+      { key: "critical", label: "Critical", min: 15, max: 25, color: "#e5484d", authority: "Regional O&M Head" }
+    ],
+    controlTypes: ["Elimination", "Substitution", "Engineering", "Administrative", "PPE"],
+    clearances: [
+      { key: "loto", label: "LOTO" }, { key: "workingAtHeights", label: "Working at Heights" },
+      { key: "lifting", label: "Lifting" }, { key: "excavation", label: "Excavation" },
+      { key: "fireGasDetection", label: "Fire/Gas Detection and Alarm" }, { key: "fireSuppression", label: "Fire Suppression" },
+      { key: "hotWorks", label: "Hot Works" }, { key: "confinedSpace", label: "Confined Space" },
+      { key: "workOverWater", label: "Work Over / Under Water" }, { key: "others", label: "Others" }
+    ],
+    permitClasses: ["Scheduled", "Emergency", "Outage"],
+    permitStatuses: ["Draft", "Submitted", "Approved", "Active", "Suspended", "Cancelled", "Closed"]
+  };
 
-  /* ---------- Risk model (5x5 matrix) ---------- */
-  function riskBand(score) {
-    if (score <= 0) return { key: "", label: "–", css: "" };
-    if (score <= 4) return { key: "low", label: "Low", css: "low" };
-    if (score <= 9) return { key: "med", label: "Medium", css: "med" };
-    if (score <= 14) return { key: "high", label: "High", css: "high" };
-    return { key: "extreme", label: "Extreme", css: "extreme" };
+  function levelFor(v) {
+    const s = Number(v) || 0;
+    if (s <= 0) return { key: "", label: "–", color: "#2a3547", authority: "" };
+    return META.riskLevels.find(l => s >= l.min && s <= l.max) || META.riskLevels[META.riskLevels.length - 1];
   }
-  function riskColor(css) {
-    return { low: "#30a46c", med: "#d9a514", high: "#e8801c", extreme: "#e5484d" }[css] || "#2a3547";
+
+  /* ---------- DOM helpers ---------- */
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  function el(tag, attrs, children) {
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "html") n.innerHTML = attrs[k];
+      else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+      else if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    }
+    (children || []).forEach(c => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
+    return n;
+  }
+  let toastTimer;
+  function toast(msg, kind) {
+    const t = $("#toast");
+    t.textContent = msg;
+    t.className = "toast " + (kind || "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add("hidden"), 3000);
+  }
+  function fmtDate(s) {
+    if (!s) return "–";
+    const d = new Date(s);
+    return isNaN(d) ? s : d.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
   }
 
   /* ---------- API client ---------- */
   async function api(path, options) {
-    const res = await fetch(API + path, {
-      headers: { "Content-Type": "application/json" },
-      ...options
-    });
+    const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...options });
     if (res.status === 204) return null;
     let body = null;
-    try { body = await res.json(); } catch { /* no body */ }
+    try { body = await res.json(); } catch { /* none */ }
     if (!res.ok) {
-      const msg = body && (body.details ? body.details.join("; ") : body.error) || ("HTTP " + res.status);
+      const msg = (body && (body.details ? body.details.join("; ") : body.error)) || ("HTTP " + res.status);
       throw new Error(msg);
     }
     return body;
   }
-  const apiList = () => api("/permits");
-  const apiCreate = (p) => api("/permits", { method: "POST", body: JSON.stringify(p) });
-  const apiUpdate = (id, p) => api("/permits/" + id, { method: "PUT", body: JSON.stringify(p) });
-  const apiDelete = (id) => api("/permits/" + id, { method: "DELETE" });
+
+  /* ---------- App state ---------- */
+  let permits = [];
+  let tras = [];
+  let curPermit = null;
+  let curTra = null;
 
   async function refresh() {
     try {
-      permits = await apiList();
+      [permits, tras] = await Promise.all([api("/permits"), api("/tras")]);
       return true;
     } catch (e) {
       toast("Cannot reach API: " + e.message, "err");
@@ -54,399 +88,634 @@
     }
   }
 
-  /* ---------- App state ---------- */
-  let permits = [];   // cache of permits loaded from the API
-  let current = null; // permit being edited
-
-  /* ---------- DOM helpers ---------- */
-  const $ = (sel, root) => (root || document).querySelector(sel);
-  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
-  function el(tag, attrs, children) {
-    const node = document.createElement(tag);
-    if (attrs) for (const k in attrs) {
-      if (k === "class") node.className = attrs[k];
-      else if (k === "html") node.innerHTML = attrs[k];
-      else if (k.slice(0, 2) === "on") node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
-      else if (attrs[k] != null) node.setAttribute(k, attrs[k]);
-    }
-    (children || []).forEach(c => node.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
-    return node;
-  }
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
-
-  let toastTimer;
-  function toast(msg, kind) {
-    const t = $("#toast");
-    t.textContent = msg;
-    t.className = "toast " + (kind || "");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.add("hidden"), 2600);
-  }
-
   /* ---------- Navigation ---------- */
   function showView(name) {
     $$(".view").forEach(v => v.classList.remove("active"));
     $("#view-" + name).classList.add("active");
-    $$(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+    const top = name.startsWith("permit") ? "permits" : name.startsWith("tra") ? "tras" : name;
+    $$(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === top));
     window.scrollTo(0, 0);
   }
 
-  /* ---------- Dashboard ---------- */
-  function permitResidual(p) {
-    const scores = (p.risks || []).map(r => (+r.rl || 0) * (+r.rs || 0));
-    return scores.length ? Math.max.apply(null, scores) : 0;
-  }
-  function permitInitial(p) {
-    const scores = (p.risks || []).map(r => (+r.l || 0) * (+r.s || 0));
-    return scores.length ? Math.max.apply(null, scores) : 0;
-  }
-
-  function renderStats() {
-    const by = (s) => permits.filter(p => p.status === s).length;
-    const stats = [
-      { l: "Total", n: permits.length },
-      { l: "Active", n: by("Active") },
-      { l: "Awaiting approval", n: by("Submitted") },
-      { l: "High / Extreme residual", n: permits.filter(p => permitResidual(p) >= 10).length }
-    ];
-    const row = $("#stat-row");
-    row.innerHTML = "";
-    stats.forEach(s => row.appendChild(
-      el("div", { class: "stat" }, [
-        el("div", { class: "n" }, [String(s.n)]),
-        el("div", { class: "l" }, [s.l])
-      ])
-    ));
-  }
-
-  function fmtDate(s) {
-    if (!s) return "–";
-    const d = new Date(s);
-    if (isNaN(d)) return "–";
-    return d.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-  }
-
-  function renderTypeFilter() {
-    const sel = $("#filter-type");
-    const cur = sel.value;
-    const types = Array.from(new Set(permits.map(p => p.type).filter(Boolean))).sort();
-    sel.innerHTML = '<option value="">All types</option>' +
-      types.map(t => `<option${t === cur ? " selected" : ""}>${esc(t)}</option>`).join("");
-  }
-
-  function renderTable() {
-    const q = $("#search").value.trim().toLowerCase();
-    const fs = $("#filter-status").value;
-    const ft = $("#filter-type").value;
-
-    const rows = permits
-      .filter(p => !fs || p.status === fs)
-      .filter(p => !ft || p.type === ft)
-      .filter(p => {
-        if (!q) return true;
-        return [p.title, p.permitNo, p.location, p.applicant, p.type]
-          .some(v => (v || "").toLowerCase().includes(q));
-      })
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-
-    const tbody = $("#permit-tbody");
-    tbody.innerHTML = "";
-    $("#empty-state").classList.toggle("hidden", rows.length > 0);
-
-    rows.forEach(p => {
-      const res = riskBand(permitResidual(p));
-      const tr = el("tr", { class: "clickable", onClick: () => openEditor(p.id) }, [
-        el("td", null, [p.permitNo || "–"]),
-        el("td", null, [p.title || "(untitled)"]),
-        el("td", null, [p.type || "–"]),
-        el("td", null, [p.location || "–"]),
-        el("td", { class: "small muted" }, [fmtDate(p.validFrom) + " → " + fmtDate(p.validTo)]),
-        el("td", null, [el("span", { class: "risk-badge " + res.css }, [res.label])]),
-        el("td", null, [el("span", { class: "pill " + (p.status || "Draft") }, [p.status || "Draft"])]),
-        el("td", null, [el("button", { class: "btn ghost small", onClick: (e) => { e.stopPropagation(); openEditor(p.id); } }, ["Open"])])
-      ]);
-      tbody.appendChild(tr);
-    });
-  }
-
-  function renderDashboard() {
-    renderStats();
-    renderTypeFilter();
-    renderTable();
-  }
-
-  /* ---------- Editor ---------- */
-  function blankPermit() {
-    // No id / permitNo yet — the server assigns these on create.
-    return {
-      title: "", type: "", location: "", applicant: "", company: "",
-      personnel: 1, validFrom: "", validTo: "", description: "",
-      hazards: [], risks: [],
-      status: "Draft", approver: "", ppe: "", emergency: "", notes: "", ack: false
-    };
-  }
-
-  function openEditor(id) {
-    current = id ? JSON.parse(JSON.stringify(permits.find(p => p.id === id))) : blankPermit();
-    const isNew = !current.id;
-    $("#editor-title").textContent = isNew ? "New Permit to Work" : "Edit Permit";
-    $("#editor-permitno").textContent = current.permitNo || "Permit number assigned on save";
-    $("#delete-btn").classList.toggle("hidden", isNew);
-
-    const f = $("#permit-form");
-    f.title.value = current.title;
-    f.type.value = current.type;
-    f.location.value = current.location;
-    f.applicant.value = current.applicant;
-    f.company.value = current.company;
-    f.personnel.value = current.personnel || 1;
-    f.validFrom.value = current.validFrom;
-    f.validTo.value = current.validTo;
-    f.description.value = current.description;
-    f.status.value = current.status;
-    f.approver.value = current.approver;
-    f.ppe.value = current.ppe;
-    f.emergency.value = current.emergency;
-    f.notes.value = current.notes;
-    f.ack.checked = !!current.ack;
-
-    renderHazardChips();
-    renderRARows();
-    updateRiskSummary();
-    showView("editor");
-  }
-
-  function renderHazardChips() {
-    const wrap = $("#hazard-chips");
-    wrap.innerHTML = "";
-    HAZARDS.forEach(h => {
-      const on = current.hazards.includes(h);
-      const chip = el("label", { class: "chip" + (on ? " on" : "") }, [
-        el("input", { type: "checkbox", ...(on ? { checked: "checked" } : {}) }),
-        h
-      ]);
-      const cb = chip.querySelector("input");
-      cb.checked = on;
-      cb.addEventListener("change", () => {
-        chip.classList.toggle("on", cb.checked);
-        if (cb.checked) { if (!current.hazards.includes(h)) current.hazards.push(h); }
-        else current.hazards = current.hazards.filter(x => x !== h);
+  /* ========================================================
+     Generic schema-driven form controls
+     ======================================================== */
+  function controlEl(def, value, onInput) {
+    const t = def.type || "text";
+    let node;
+    if (t === "textarea") {
+      node = el("textarea", { rows: def.rows || 2 });
+      node.value = value || "";
+      node.addEventListener("input", () => onInput(node.value));
+    } else if (t === "select") {
+      node = el("select");
+      node.appendChild(el("option", { value: "" }, [def.placeholder || "Select…"]));
+      (def.options || []).forEach(o => {
+        const v = typeof o === "object" ? o.value : o;
+        const lbl = typeof o === "object" ? o.label : o;
+        node.appendChild(el("option", { value: v }, [lbl]));
       });
-      wrap.appendChild(chip);
-    });
+      node.value = value || "";
+      node.addEventListener("change", () => onInput(node.value));
+    } else if (t === "radio") {
+      node = el("div", { class: "radio-group" });
+      (def.options || ["Yes", "No"]).forEach(o => {
+        const lab = el("label", { class: "radio" + (value === o ? " on" : "") }, [
+          el("input", { type: "radio", name: def.key + "_" + Math.random().toString(36).slice(2, 6) }), o
+        ]);
+        const inp = lab.querySelector("input");
+        inp.checked = value === o;
+        inp.addEventListener("change", () => {
+          onInput(o);
+          $$(".radio", node).forEach(c => c.classList.remove("on"));
+          lab.classList.add("on");
+        });
+        node.appendChild(lab);
+      });
+    } else {
+      node = el("input", { type: t });
+      node.value = value == null ? "" : value;
+      node.addEventListener("input", () => onInput(node.value));
+    }
+    return node;
   }
 
-  function raRow(r) {
-    const tr = el("tr");
-    const mk = (name, ph, w) => {
-      const td = el("td");
-      td.appendChild(el("textarea", { rows: "2", placeholder: ph, style: w ? "width:100%" : "" }));
-      const ta = td.querySelector("textarea");
-      ta.value = r[name] || "";
-      ta.addEventListener("input", () => { r[name] = ta.value; });
-      return td;
+  // Render one labelled field bound to state[def.key].
+  function field(def, state, after) {
+    const wrap = el("label", { class: def.full ? "full" : "" });
+    const head = el("span", { class: "field-label" }, [def.label || def.key]);
+    if (def.hint) head.appendChild(el("span", { class: "hint" }, [" " + def.hint]));
+    wrap.appendChild(head);
+    wrap.appendChild(controlEl(def, state[def.key], v => { state[def.key] = v; if (after) after(); }));
+    return wrap;
+  }
+
+  function sectionCard(title, fieldsOrNode, state, after) {
+    const fs = el("fieldset", { class: "card" });
+    fs.appendChild(el("legend", null, [title]));
+    if (Array.isArray(fieldsOrNode)) {
+      const grid = el("div", { class: "grid" });
+      fieldsOrNode.forEach(def => grid.appendChild(field(def, state, after)));
+      fs.appendChild(grid);
+    } else if (fieldsOrNode) {
+      fs.appendChild(fieldsOrNode);
+    }
+    return fs;
+  }
+
+  const YN = ["Yes", "No"];
+  const YNNA = ["Yes", "No", "N/A"];
+
+  /* ========================================================
+     TASK RISK ASSESSMENT (TRA) editor
+     ======================================================== */
+  const TRA_HEADER = [
+    { key: "workDescription", label: "Work Description", type: "textarea", full: true },
+    { key: "woSwmsNo", label: "WO / SWMS No." },
+    { key: "equipment", label: "Equipment Involved" },
+    { key: "location", label: "Location" },
+    { key: "datePrepared", label: "Date Prepared", type: "date" },
+    { key: "contractor", label: "Contractor" },
+    { key: "workSponsor", label: "Work Sponsor" },
+    { key: "deptInCharge", label: "Department In-charge" }
+  ];
+  const PERSON_FIELDS = [
+    { key: "name", label: "Name" },
+    { key: "designation", label: "Designation - Dep't." },
+    { key: "signature", label: "Signature" },
+    { key: "date", label: "Date", type: "date" }
+  ];
+
+  function blankTra() {
+    return {
+      workDescription: "", woSwmsNo: "", equipment: "", location: "", datePrepared: "",
+      contractor: "", workSponsor: "", deptInCharge: "",
+      steps: [], parties: { facilitator: {}, contractorLead: {}, areaOwner: {}, auxiliary: [] },
+      approver: {}
     };
-    const scoreInput = (name) => {
+  }
+
+  function vuln(s, p) { return (parseInt(s, 10) || 0) * (parseInt(p, 10) || 0); }
+
+  function traHrv() {
+    const vals = (curTra.steps || []).map(s => vuln(s.residualS, s.residualP));
+    return vals.length ? Math.max(...vals) : 0;
+  }
+
+  function riskBadge(v) {
+    const lv = levelFor(v);
+    const b = el("span", { class: "risk-badge" }, [v ? v + " " + lv.label : "–"]);
+    if (lv.key) { b.style.background = lv.color; b.style.color = "#0c1018"; }
+    return b;
+  }
+
+  function traStepRow(step, idx) {
+    const tr = el("tr");
+    tr.appendChild(el("td", { class: "muted" }, [String(idx + 1)]));
+
+    const ta = (key, ph) => {
+      const td = el("td");
+      const t = el("textarea", { rows: 2, placeholder: ph || "" });
+      t.value = step[key] || "";
+      t.addEventListener("input", () => { step[key] = t.value; });
+      td.appendChild(t); return td;
+    };
+    const scoreCell = (key) => {
       const td = el("td", { class: "score-cell" });
-      const inp = el("input", { type: "number", min: "1", max: "5" });
-      inp.value = r[name] || "";
+      const inp = el("input", { type: "number", min: 1, max: 5 });
+      inp.value = step[key] || "";
       inp.addEventListener("input", () => {
         let v = parseInt(inp.value, 10);
-        if (isNaN(v)) v = "";
-        else v = Math.max(1, Math.min(5, v));
-        inp.value = v;
-        r[name] = v;
-        recalcRow();
-        updateRiskSummary();
+        v = isNaN(v) ? "" : Math.max(1, Math.min(5, v));
+        inp.value = v; step[key] = v;
+        recalc(); updateTraHrv();
       });
-      td.appendChild(inp);
-      return td;
+      td.appendChild(inp); return td;
     };
-
-    const initialTd = el("td", { class: "ra-cell-risk" });
-    const residualTd = el("td", { class: "ra-cell-risk" });
-
-    function recalcRow() {
-      const i = (+r.l || 0) * (+r.s || 0);
-      const res = (+r.rl || 0) * (+r.rs || 0);
-      const bi = riskBand(i), br = riskBand(res);
-      initialTd.innerHTML = "";
-      residualTd.innerHTML = "";
-      initialTd.appendChild(el("span", { class: "risk-badge " + bi.css }, [i ? i + " " + bi.label : "–"]));
-      residualTd.appendChild(el("span", { class: "risk-badge " + br.css }, [res ? res + " " + br.label : "–"]));
+    const vIn = el("td", { class: "ra-cell-risk" });
+    const vRes = el("td", { class: "ra-cell-risk" });
+    function recalc() {
+      vIn.innerHTML = ""; vRes.innerHTML = "";
+      vIn.appendChild(riskBadge(vuln(step.inherentS, step.inherentP)));
+      vRes.appendChild(riskBadge(vuln(step.residualS, step.residualP)));
     }
+    const typeTd = el("td");
+    const sel = controlEl({ type: "select", options: META.controlTypes, placeholder: "Type…" },
+      step.controlType, v => { step.controlType = v; });
+    typeTd.appendChild(sel);
 
     const delTd = el("td", null, [
-      el("button", { class: "row-del", title: "Remove", type: "button", onClick: () => {
-        current.risks = current.risks.filter(x => x !== r);
-        tr.remove();
-        updateRiskSummary();
+      el("button", { class: "row-del", type: "button", title: "Remove", onClick: () => {
+        curTra.steps = curTra.steps.filter(x => x !== step);
+        renderTraSteps(); updateTraHrv();
       } }, ["×"])
     ]);
 
-    tr.appendChild(mk("hazard", "Step / hazard"));
-    tr.appendChild(scoreInput("l"));
-    tr.appendChild(scoreInput("s"));
-    tr.appendChild(initialTd);
-    tr.appendChild(mk("controls", "Control measures", true));
-    tr.appendChild(scoreInput("rl"));
-    tr.appendChild(scoreInput("rs"));
-    tr.appendChild(residualTd);
+    tr.appendChild(ta("workStep", "Work step description"));
+    tr.appendChild(ta("hazards", "Cause and effect"));
+    tr.appendChild(scoreCell("inherentS"));
+    tr.appendChild(scoreCell("inherentP"));
+    tr.appendChild(vIn);
+    tr.appendChild(ta("controlMeasures", "Be specific"));
+    tr.appendChild(typeTd);
+    tr.appendChild(scoreCell("residualS"));
+    tr.appendChild(scoreCell("residualP"));
+    tr.appendChild(vRes);
+    tr.appendChild(ta("remarks"));
     tr.appendChild(delTd);
-    recalcRow();
+    recalc();
     return tr;
   }
 
-  function renderRARows() {
-    const tb = $("#ra-tbody");
+  function renderTraSteps() {
+    const tb = $("#tra-steps-body");
     tb.innerHTML = "";
-    if (!current.risks.length) addRARow();
-    else current.risks.forEach(r => tb.appendChild(raRow(r)));
+    if (!curTra.steps.length) curTra.steps.push({});
+    curTra.steps.forEach((s, i) => tb.appendChild(traStepRow(s, i)));
   }
 
-  function addRARow() {
-    const r = { hazard: "", l: "", s: "", controls: "", rl: "", rs: "" };
-    current.risks.push(r);
-    $("#ra-tbody").appendChild(raRow(r));
+  function updateTraHrv() {
+    const v = traHrv();
+    const lv = levelFor(v);
+    const box = $("#tra-hrv");
+    box.innerHTML = "";
+    const badge = riskBadge(v);
+    box.appendChild(el("div", null, [el("span", { class: "muted small" }, ["Highest Residual Vulnerability (HRV) "]), badge]));
+    box.appendChild(el("div", { class: "muted small" }, ["Risk level: ", el("b", null, [lv.label || "–"])]));
+    box.appendChild(el("div", { class: "muted small" }, ["Approval authority: ", el("b", null, [lv.authority || "–"])]));
   }
 
-  function updateRiskSummary() {
-    const i = permitInitial(current), res = permitResidual(current);
-    const bi = riskBand(i), br = riskBand(res);
-    const si = $("#summary-initial"), sr = $("#summary-residual");
-    si.className = "risk-badge " + bi.css;
-    si.textContent = i ? i + " " + bi.label : "–";
-    sr.className = "risk-badge " + br.css;
-    sr.textContent = res ? res + " " + br.label : "–";
+  function personCard(title, obj, withRole) {
+    const fs = el("fieldset", { class: "card sub" });
+    fs.appendChild(el("legend", null, [title]));
+    const grid = el("div", { class: "grid party-grid" });
+    const fields = withRole ? [{ key: "role", label: "Role" }, ...PERSON_FIELDS] : PERSON_FIELDS;
+    fields.forEach(f => grid.appendChild(field(f, obj)));
+    fs.appendChild(grid);
+    return fs;
   }
 
-  function collectForm() {
-    const f = $("#permit-form");
-    current.title = f.title.value.trim();
-    current.type = f.type.value;
-    current.location = f.location.value.trim();
-    current.applicant = f.applicant.value.trim();
-    current.company = f.company.value.trim();
-    current.personnel = +f.personnel.value || 1;
-    current.validFrom = f.validFrom.value;
-    current.validTo = f.validTo.value;
-    current.description = f.description.value.trim();
-    current.status = f.status.value;
-    current.approver = f.approver.value.trim();
-    current.ppe = f.ppe.value.trim();
-    current.emergency = f.emergency.value.trim();
-    current.notes = f.notes.value.trim();
-    current.ack = f.ack.checked;
-    // drop fully-empty risk rows
-    current.risks = current.risks.filter(r =>
-      r.hazard || r.controls || r.l || r.s || r.rl || r.rs);
+  function buildTraForm() {
+    const body = $("#tra-form-body");
+    body.innerHTML = "";
+    body.appendChild(sectionCard("Task Details", TRA_HEADER, curTra));
+
+    // Risk assessment steps
+    const raCard = el("fieldset", { class: "card" });
+    raCard.appendChild(el("legend", null, ["Risk Assessment"]));
+    raCard.appendChild(el("p", { class: "muted small" }, [
+      "Severity (S) × Probability (P) = Vulnerability (V), each scored 1–5. Score the inherent risk, add controls, then the residual risk."
+    ]));
+    const wrap = el("div", { class: "table-wrap" });
+    const table = el("table", { class: "ra-table" });
+    table.innerHTML = `<thead><tr>
+      <th>#</th><th>Work Step</th><th>Hazard(s)</th>
+      <th title="Inherent Severity">S</th><th title="Inherent Probability">P</th><th>V</th>
+      <th>Control Measures</th><th>Type of Control</th>
+      <th title="Residual Severity">S</th><th title="Residual Probability">P</th><th>V</th>
+      <th>Remarks</th><th></th></tr></thead><tbody id="tra-steps-body"></tbody>`;
+    wrap.appendChild(table);
+    raCard.appendChild(wrap);
+    raCard.appendChild(el("button", { class: "btn ghost small", type: "button",
+      onClick: () => { curTra.steps.push({}); renderTraSteps(); } }, ["+ Add work step"]));
+    raCard.appendChild(el("div", { id: "tra-hrv", class: "hrv-box" }));
+    body.appendChild(raCard);
+
+    // Parties
+    const parties = el("fieldset", { class: "card" });
+    parties.appendChild(el("legend", null, ["TRA Creation — Essential Parties"]));
+    curTra.parties = curTra.parties || {};
+    curTra.parties.facilitator = curTra.parties.facilitator || {};
+    curTra.parties.contractorLead = curTra.parties.contractorLead || {};
+    curTra.parties.areaOwner = curTra.parties.areaOwner || {};
+    curTra.parties.auxiliary = curTra.parties.auxiliary || [];
+    parties.appendChild(personCard("Facilitator (MNT / FSM / SEC / SHE)", curTra.parties.facilitator));
+    parties.appendChild(personCard("Contractor Lead (when applicable)", curTra.parties.contractorLead));
+    parties.appendChild(personCard("Area Owner / Operations Representative", curTra.parties.areaOwner));
+
+    const auxWrap = el("div", { id: "tra-aux" });
+    parties.appendChild(el("h4", { class: "sub-head" }, ["Auxiliary Parties"]));
+    parties.appendChild(auxWrap);
+    parties.appendChild(el("button", { class: "btn ghost small", type: "button",
+      onClick: () => { curTra.parties.auxiliary.push({}); renderAux(); } }, ["+ Add auxiliary party"]));
+    body.appendChild(parties);
+
+    // Approver
+    const appr = el("fieldset", { class: "card" });
+    appr.appendChild(el("legend", null, ["TRA Approved By"]));
+    appr.appendChild(el("p", { class: "muted small", id: "tra-appr-note" }, []));
+    curTra.approver = curTra.approver || {};
+    const ag = el("div", { class: "grid party-grid" });
+    PERSON_FIELDS.forEach(f => ag.appendChild(field(f, curTra.approver)));
+    appr.appendChild(ag);
+    body.appendChild(appr);
+
+    renderTraSteps();
+    renderAux();
+    updateTraHrv();
+    updateApprNote();
   }
 
-  function validate() {
-    const f = $("#permit-form");
-    const required = ["title", "type", "location", "applicant", "validFrom", "validTo"];
-    for (const name of required) {
-      if (!f[name].value) {
-        f[name].focus();
-        toast("Please complete: " + name, "err");
-        return false;
+  function updateApprNote() {
+    const lv = levelFor(traHrv());
+    $("#tra-appr-note").textContent = lv.authority
+      ? `Based on the HRV (${lv.label}), this TRA should be approved by: ${lv.authority}.`
+      : "Add residual scores to determine the required approval authority.";
+  }
+
+  function renderAux() {
+    const wrap = $("#tra-aux");
+    wrap.innerHTML = "";
+    curTra.parties.auxiliary.forEach((p, i) => {
+      const card = personCard("Auxiliary Party " + (i + 1), p, true);
+      card.appendChild(el("button", { class: "btn ghost small", type: "button",
+        onClick: () => { curTra.parties.auxiliary.splice(i, 1); renderAux(); } }, ["Remove"]));
+      wrap.appendChild(card);
+    });
+  }
+
+  function openTraEditor(id) {
+    curTra = id ? JSON.parse(JSON.stringify(tras.find(t => t.id === id))) : blankTra();
+    const isNew = !curTra.id;
+    $("#tra-editor-title").textContent = isNew ? "New Task Risk Assessment" : "Edit Risk Assessment";
+    $("#tra-editor-no").textContent = curTra.traRef || "TRA reference assigned on save";
+    $("#tra-delete").classList.toggle("hidden", isNew);
+    buildTraForm();
+    // recompute approver note whenever residual scores change
+    $("#tra-steps-body").addEventListener("input", updateApprNote);
+    showView("tra-editor");
+  }
+
+  async function saveTra() {
+    if (!curTra.workDescription || !curTra.workDescription.trim()) {
+      toast("Work Description is required.", "err"); return;
+    }
+    curTra.steps = curTra.steps.filter(s =>
+      s.workStep || s.hazards || s.controlMeasures || s.remarks ||
+      s.inherentS || s.inherentP || s.residualS || s.residualP || s.controlType);
+    try {
+      const saved = curTra.id ? await api("/tras/" + curTra.id, { method: "PUT", body: JSON.stringify(curTra) })
+        : await api("/tras", { method: "POST", body: JSON.stringify(curTra) });
+      await refresh();
+      toast("Saved " + (saved ? saved.traRef : "TRA") + ".", "ok");
+      renderTraRegister(); showView("tras");
+    } catch (e) { toast("Save failed: " + e.message, "err"); }
+  }
+
+  async function deleteTra() {
+    if (!curTra || !curTra.id) return;
+    const used = permits.find(p => p.traNo === curTra.traRef);
+    if (used) { toast("Cannot delete: linked to permit " + used.ptwNo + ".", "err"); return; }
+    if (!confirm("Delete " + curTra.traRef + "?")) return;
+    try {
+      await api("/tras/" + curTra.id, { method: "DELETE" });
+      await refresh();
+      toast("Risk assessment deleted.");
+      renderTraRegister(); showView("tras");
+    } catch (e) { toast("Delete failed: " + e.message, "err"); }
+  }
+
+  /* ========================================================
+     PERMIT TO WORK (PTW) editor
+     ======================================================== */
+  function permitSchema() {
+    return [
+      { title: "Permit", fields: [
+        { key: "permitClass", label: "Permit Class", type: "radio", options: META.permitClasses },
+        { key: "status", label: "Status", type: "select", options: META.permitStatuses },
+        { key: "workOrderNo", label: "Work Order No." },
+        { key: "traNo", label: "TRA No.", type: "select", options: tras.map(t => t.traRef) }
+      ]},
+      { title: "Section 1.0 — Application", fields: [
+        { key: "workDescription", label: "Work Description", type: "textarea", full: true },
+        { key: "dateOfApplication", label: "Date of Application", type: "date" },
+        { key: "timeOfApplication", label: "Time of Application", type: "time" },
+        { key: "equipmentToWorkOn", label: "Equipment to work on" },
+        { key: "permitReceiver", label: "Name of Permit Receiver" },
+        { key: "contactNumber", label: "Contact Number" },
+        { key: "areaLocation", label: "Area, Location, or Site" },
+        { key: "workParty", label: "Work Party" },
+        { key: "engineStatus", label: "Engine Status", hint: "(N/A if not applicable)" },
+        { key: "masterPtwNo", label: "Master PTW No. (Outage)", hint: "(N/A if not applicable)" },
+        { key: "workToBePerformed", label: "Work to be performed", type: "textarea", full: true },
+        { key: "newInstallation", label: "New installation in the facility?", type: "radio", options: YN },
+        { key: "modification", label: "Modification affecting process/capacity/etc.?", type: "radio", options: YN },
+        { key: "mocRef", label: "MOC Ref. No.", hint: "(or N/A)" }
+      ]},
+      { title: "Section 2.0 — Gas Testing", fields: [
+        { key: "gasTestingRequired", label: "Gas testing required?", type: "radio", options: YN },
+        { key: "gasTesterName", label: "Gas Tester Name & Signature" },
+        { key: "gasMonitoringLogNo", label: "Gas Monitoring Log No." },
+        { key: "o2", label: "%O2", hint: "(19.5% – 23.5%)" },
+        { key: "h2s", label: "H2S", hint: "(0 ppm)" },
+        { key: "lel", label: "LEL", hint: "(0%)" },
+        { key: "co", label: "CO", hint: "(0 ppm)" },
+        { key: "otherGases", label: "Other Gases" }
+      ]},
+      { title: "Section 3.0 — Clearances & Special Measures", clearances: true, fields: [
+        { key: "othersSpecify", label: "Others (specify)" },
+        { key: "impairmentDescription", label: "Protective system impairment — equipment & description", type: "textarea", full: true },
+        { key: "affectedAreas", label: "Affected Areas" },
+        { key: "specialMeasures", label: "Special measures / requirements", type: "textarea", full: true }
+      ]},
+      { title: "Section 4.0 — Lock-out, Tag-out", fields: [
+        { key: "electricalIsolationOfficer", label: "Electrical Isolation — Officer" },
+        { key: "electricalIsolationDate", label: "Date", type: "date" },
+        { key: "electricalIsolationTime", label: "Time", type: "time" },
+        { key: "mechanicalIsolationOfficer", label: "Mechanical Isolation — Officer" },
+        { key: "mechanicalIsolationDate", label: "Date", type: "date" },
+        { key: "mechanicalIsolationTime", label: "Time", type: "time" },
+        { key: "zeroEnergyTestOfficer", label: "Zero Energy Test — Officer" },
+        { key: "zeroEnergyTestDate", label: "Date", type: "date" },
+        { key: "zeroEnergyTestTime", label: "Time", type: "time" },
+        { key: "isolationSpecialMeasures", label: "Special measures for isolation", type: "textarea", full: true }
+      ]},
+      { title: "Section 5.0 — Commencement of Work", fields: [
+        { key: "initialWorkDuration", label: "Initial work duration" },
+        { key: "dateOfRelease", label: "Date of work Release", type: "date" },
+        { key: "timeOfRelease", label: "Time of work Release", type: "time" },
+        { key: "dateOfExpiry", label: "Date of Work Expiry", type: "date" },
+        { key: "timeOfExpiry", label: "Time of Work Expiry", type: "time" },
+        { key: "permitIssuer", label: "Permit Issuer" },
+        { key: "extensionDuration", label: "Extension duration (if needed)" },
+        { key: "secondExpiryDate", label: "2nd Work Expiry Date", type: "date" },
+        { key: "secondExpiryTime", label: "Time of work expiry", type: "time" },
+        { key: "reasonForExtension", label: "Reason for extension", type: "textarea", full: true }
+      ]},
+      { title: "Section 6.0 — Cancellation & Suspension", fields: [
+        { key: "cancellationReason", label: "Cancellation", type: "select",
+          options: ["Major incident occurred", "Major work scope change", "Work not completed w/in duration"] },
+        { key: "cancellationDate", label: "Cancellation Date", type: "date" },
+        { key: "cancellationTime", label: "Time", type: "time" },
+        { key: "suspensionReason", label: "Suspension", type: "select",
+          options: ["Minor incident occurred", "Unavailability of supplies", "New potential threat"] },
+        { key: "suspensionDate", label: "Suspension Date", type: "date" },
+        { key: "suspensionTime", label: "Time", type: "time" },
+        { key: "resumptionDate", label: "Resumption Date", type: "date" },
+        { key: "resumptionTime", label: "Time", type: "time" },
+        { key: "cancelSuspendNotes", label: "Reason for cancellation or suspension", type: "textarea", full: true }
+      ]},
+      { title: "Section 7.0 — Worksite Turn Over", fields: [
+        { key: "modificationsMade", label: "Modifications/substitutions made?", type: "radio", options: YN },
+        { key: "modificationsDesc", label: "State modifications made", type: "textarea", full: true },
+        { key: "workCompleted", label: "Work is Completed?", type: "radio", options: YN },
+        { key: "turnoverReceiver", label: "Permit Receiver" },
+        { key: "turnoverDate", label: "Date", type: "date" },
+        { key: "turnoverTime", label: "Time", type: "time" }
+      ]},
+      { title: "Section 8.0 — Worksite Turnover Review", fields: [
+        { key: "emocRequired", label: "Is EMOC required?", type: "radio", options: YNNA },
+        { key: "deisolationImplemented", label: "De-isolation implemented?", type: "radio", options: YNNA },
+        { key: "specialMeasuresRelieved", label: "Special measures relieved?", type: "radio", options: YNNA },
+        { key: "emocActions", label: "Actions if EMOC is required", type: "textarea", full: true }
+      ]},
+      { title: "Section 9.0 — Restoration to Operational Readiness", fields: [
+        { key: "functionalChecks", label: "Functional checks made & equipment restored?", type: "radio", options: YN },
+        { key: "restorationActions", label: "If NO, state actions to be done", type: "textarea", full: true }
+      ]},
+      { title: "Section 10.0 — Closeout", fields: [
+        { key: "closeoutName", label: "Name" },
+        { key: "closeoutSignature", label: "Signature" },
+        { key: "closeoutDate", label: "Date", type: "date" },
+        { key: "closeoutTime", label: "Time", type: "time" }
+      ]}
+    ];
+  }
+
+  function blankPermit() {
+    return { permitClass: "Scheduled", status: "Draft", clearances: {}, workDescription: "", permitReceiver: "" };
+  }
+
+  function clearancesBlock() {
+    curPermit.clearances = curPermit.clearances || {};
+    const box = el("div", null, [
+      el("p", { class: "muted small" }, ["Tick the clearances / special measures that apply."])
+    ]);
+    const chips = el("div", { class: "chips" });
+    META.clearances.forEach(c => {
+      const on = !!curPermit.clearances[c.key];
+      const chip = el("label", { class: "chip" + (on ? " on" : "") }, [el("input", { type: "checkbox" }), c.label]);
+      const cb = chip.querySelector("input");
+      cb.checked = on;
+      cb.addEventListener("change", () => {
+        curPermit.clearances[c.key] = cb.checked;
+        chip.classList.toggle("on", cb.checked);
+      });
+      chips.appendChild(chip);
+    });
+    box.appendChild(chips);
+    return box;
+  }
+
+  function buildPermitForm() {
+    const body = $("#permit-form-body");
+    body.innerHTML = "";
+    permitSchema().forEach(sec => {
+      const card = sectionCard(sec.title, sec.clearances ? null : sec.fields, curPermit);
+      if (sec.clearances) {
+        card.appendChild(clearancesBlock());
+        const grid = el("div", { class: "grid" });
+        sec.fields.forEach(def => grid.appendChild(field(def, curPermit)));
+        card.appendChild(grid);
       }
-    }
-    if (f.validTo.value && f.validFrom.value && f.validTo.value < f.validFrom.value) {
-      toast("‘Valid To’ must be after ‘Valid From’.", "err");
-      return false;
-    }
-    if (["Approved", "Active"].includes(f.status.value) && !f.ack.checked) {
-      toast("Confirm the assessment acknowledgement before approving.", "err");
-      return false;
-    }
-    return true;
+      body.appendChild(card);
+    });
+  }
+
+  function openPermitEditor(id) {
+    curPermit = id ? JSON.parse(JSON.stringify(permits.find(p => p.id === id))) : blankPermit();
+    const isNew = !curPermit.id;
+    $("#permit-editor-title").textContent = isNew ? "New Permit to Work" : "Edit Permit";
+    $("#permit-editor-no").textContent = curPermit.ptwNo || "Permit number assigned on save";
+    $("#permit-delete").classList.toggle("hidden", isNew);
+    buildPermitForm();
+    showView("permit-editor");
   }
 
   async function savePermit() {
-    if (!validate()) return;
-    collectForm();
+    if (!curPermit.workDescription || !curPermit.workDescription.trim()) { toast("Work Description is required.", "err"); return; }
+    if (!curPermit.permitReceiver || !curPermit.permitReceiver.trim()) { toast("Permit Receiver is required.", "err"); return; }
     try {
-      const saved = current.id
-        ? await apiUpdate(current.id, current)
-        : await apiCreate(current);
+      const saved = curPermit.id ? await api("/permits/" + curPermit.id, { method: "PUT", body: JSON.stringify(curPermit) })
+        : await api("/permits", { method: "POST", body: JSON.stringify(curPermit) });
       await refresh();
-      toast("Permit " + (saved ? saved.permitNo : "") + " saved.", "ok");
-      renderDashboard();
-      showView("dashboard");
-    } catch (e) {
-      toast("Save failed: " + e.message, "err");
-    }
+      toast("Saved " + (saved ? saved.ptwNo : "permit") + ".", "ok");
+      renderPermitRegister(); showView("permits");
+    } catch (e) { toast("Save failed: " + e.message, "err"); }
   }
 
   async function deletePermit() {
-    if (!current || !current.id) return;
-    if (!confirm("Delete permit " + current.permitNo + "? This cannot be undone.")) return;
+    if (!curPermit || !curPermit.id) return;
+    if (!confirm("Delete " + curPermit.ptwNo + "?")) return;
     try {
-      await apiDelete(current.id);
+      await api("/permits/" + curPermit.id, { method: "DELETE" });
       await refresh();
-      toast("Permit deleted.", "");
-      renderDashboard();
-      showView("dashboard");
-    } catch (e) {
-      toast("Delete failed: " + e.message, "err");
-    }
+      toast("Permit deleted.");
+      renderPermitRegister(); showView("permits");
+    } catch (e) { toast("Delete failed: " + e.message, "err"); }
   }
 
-  /* ---------- Matrix help ---------- */
-  function buildMatrixHelp() {
-    const likely = ["Rare", "Unlikely", "Possible", "Likely", "Almost certain"];
-    const sever = ["Negligible", "Minor", "Moderate", "Major", "Catastrophic"];
-    let html = "<p class='muted small'>Risk score = Likelihood &times; Severity. " +
-      "Bands: <b>1–4 Low</b>, <b>5–9 Medium</b>, <b>10–14 High</b>, <b>15–25 Extreme</b>.</p>";
-    html += "<table class='matrix'><tr><th>L \\ S</th>";
-    for (let s = 1; s <= 5; s++) html += `<th>${s}<br><span class='muted small'>${sever[s-1]}</span></th>`;
-    html += "</tr>";
-    for (let l = 5; l >= 1; l--) {
-      html += `<tr><th>${l}<br><span class='muted small'>${likely[l-1]}</span></th>`;
-      for (let s = 1; s <= 5; s++) {
-        const score = l * s;
-        const b = riskBand(score);
-        html += `<td class='cell' style='background:${riskColor(b.css)}'>${score}</td>`;
-      }
-      html += "</tr>";
-    }
-    html += "</table>";
-    $("#matrix-help-body").innerHTML = html;
+  /* ========================================================
+     Registers (dashboards)
+     ======================================================== */
+  function statTile(n, label) {
+    return el("div", { class: "stat" }, [el("div", { class: "n" }, [String(n)]), el("div", { class: "l" }, [label])]);
   }
 
-  /* ---------- Wire up ---------- */
+  function renderPermitRegister() {
+    // filters
+    const fStatus = $("#permit-filter-status");
+    if (fStatus.children.length <= 1) META.permitStatuses.forEach(s => fStatus.appendChild(el("option", null, [s])));
+    const fClass = $("#permit-filter-class");
+    if (fClass.children.length <= 1) META.permitClasses.forEach(c => fClass.appendChild(el("option", null, [c])));
+
+    const stats = $("#permit-stats");
+    stats.innerHTML = "";
+    const by = s => permits.filter(p => p.status === s).length;
+    stats.appendChild(statTile(permits.length, "Total"));
+    stats.appendChild(statTile(by("Active"), "Active"));
+    stats.appendChild(statTile(by("Submitted"), "Awaiting approval"));
+    stats.appendChild(statTile(by("Suspended"), "Suspended"));
+
+    renderPermitRows();
+  }
+
+  function renderPermitRows() {
+    const q = $("#permit-search").value.trim().toLowerCase();
+    const fs = $("#permit-filter-status").value;
+    const fc = $("#permit-filter-class").value;
+    const rows = permits
+      .filter(p => !fs || p.status === fs)
+      .filter(p => !fc || p.permitClass === fc)
+      .filter(p => !q || [p.ptwNo, p.workDescription, p.areaLocation, p.permitReceiver, p.traNo]
+        .some(v => (v || "").toLowerCase().includes(q)));
+    const tb = $("#permit-tbody");
+    tb.innerHTML = "";
+    $("#permit-empty").classList.toggle("hidden", rows.length > 0);
+    rows.forEach(p => {
+      tb.appendChild(el("tr", { class: "clickable", onClick: () => openPermitEditor(p.id) }, [
+        el("td", null, [p.ptwNo || "–"]),
+        el("td", null, [p.workDescription || "(untitled)"]),
+        el("td", null, [p.permitClass || "–"]),
+        el("td", null, [p.areaLocation || "–"]),
+        el("td", null, [p.traNo || "–"]),
+        el("td", { class: "small muted" }, [fmtDate(p.dateOfExpiry)]),
+        el("td", null, [el("span", { class: "pill " + (p.status || "Draft") }, [p.status || "Draft"])]),
+        el("td", null, [el("button", { class: "btn ghost small", onClick: e => { e.stopPropagation(); openPermitEditor(p.id); } }, ["Open"])])
+      ]));
+    });
+  }
+
+  function renderTraRegister() {
+    const fLevel = $("#tra-filter-level");
+    if (fLevel.children.length <= 1) META.riskLevels.forEach(l => fLevel.appendChild(el("option", { value: l.label }, [l.label])));
+
+    const stats = $("#tra-stats");
+    stats.innerHTML = "";
+    const lvlCount = key => tras.filter(t => t.hrv && t.hrv.level === key).length;
+    stats.appendChild(statTile(tras.length, "Total"));
+    stats.appendChild(statTile(lvlCount("high") + lvlCount("critical"), "High / Critical"));
+    stats.appendChild(statTile(lvlCount("moderate"), "Moderate"));
+    stats.appendChild(statTile(lvlCount("low"), "Low"));
+
+    renderTraRows();
+  }
+
+  function renderTraRows() {
+    const q = $("#tra-search").value.trim().toLowerCase();
+    const fl = $("#tra-filter-level").value;
+    const rows = tras
+      .filter(t => !fl || (t.hrv && t.hrv.label === fl))
+      .filter(t => !q || [t.traRef, t.workDescription, t.equipment, t.location]
+        .some(v => (v || "").toLowerCase().includes(q)));
+    const tb = $("#tra-tbody");
+    tb.innerHTML = "";
+    $("#tra-empty").classList.toggle("hidden", rows.length > 0);
+    rows.forEach(t => {
+      const v = t.hrv ? t.hrv.value : 0;
+      tb.appendChild(el("tr", { class: "clickable", onClick: () => openTraEditor(t.id) }, [
+        el("td", null, [t.traRef || "–"]),
+        el("td", null, [t.workDescription || "(untitled)"]),
+        el("td", null, [t.equipment || "–"]),
+        el("td", null, [t.location || "–"]),
+        el("td", { class: "muted" }, [String((t.steps || []).length)]),
+        el("td", null, [riskBadge(v)]),
+        el("td", null, [el("button", { class: "btn ghost small", onClick: e => { e.stopPropagation(); openTraEditor(t.id); } }, ["Open"])])
+      ]));
+    });
+  }
+
+  /* ========================================================
+     Wire up
+     ======================================================== */
   async function init() {
-    buildMatrixHelp();
+    try { META = await api("/meta") || META; } catch { /* use fallback */ }
     await refresh();
-    renderDashboard();
+    renderPermitRegister();
+    renderTraRegister();
 
-    document.addEventListener("click", (e) => {
-      const navBtn = e.target.closest(".nav-btn");
-      if (navBtn) {
-        if (navBtn.dataset.view === "editor") openEditor(null);
-        else showView("dashboard");
-        return;
-      }
-      const action = e.target.closest("[data-action]");
-      if (!action) return;
-      switch (action.dataset.action) {
-        case "new-permit": openEditor(null); break;
+    document.addEventListener("click", e => {
+      const nav = e.target.closest(".nav-btn");
+      if (nav) { showView(nav.dataset.view); return; }
+      const a = e.target.closest("[data-action]");
+      if (!a) return;
+      switch (a.dataset.action) {
+        case "new-permit": openPermitEditor(null); break;
         case "save-permit": savePermit(); break;
-        case "cancel-edit": showView("dashboard"); renderDashboard(); break;
+        case "cancel-permit": renderPermitRegister(); showView("permits"); break;
         case "delete-permit": deletePermit(); break;
-        case "add-ra-row": addRARow(); break;
+        case "new-tra": openTraEditor(null); break;
+        case "save-tra": saveTra(); break;
+        case "cancel-tra": renderTraRegister(); showView("tras"); break;
+        case "delete-tra": deleteTra(); break;
       }
     });
 
-    $("#search").addEventListener("input", renderTable);
-    $("#filter-status").addEventListener("change", renderTable);
-    $("#filter-type").addEventListener("change", renderTable);
-
-    $("#permit-form").addEventListener("submit", (e) => { e.preventDefault(); savePermit(); });
+    $("#permit-search").addEventListener("input", renderPermitRows);
+    $("#permit-filter-status").addEventListener("change", renderPermitRows);
+    $("#permit-filter-class").addEventListener("change", renderPermitRows);
+    $("#tra-search").addEventListener("input", renderTraRows);
+    $("#tra-filter-level").addEventListener("change", renderTraRows);
   }
 
   document.addEventListener("DOMContentLoaded", init);

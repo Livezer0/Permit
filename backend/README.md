@@ -1,81 +1,80 @@
-# PTW Backend — REST API
+# PTW / TRA Backend — REST API
 
-Express REST API for the Permit to Work app, backed by SQLite via Node's
-built‑in `node:sqlite` module (no native build step).
+Express REST API for the Permit to Work & Task Risk Assessment app, backed by
+SQLite via Node's built‑in `node:sqlite` module (no native build step).
 
 ## Run
 
 ```bash
 npm install
 npm start          # http://localhost:4000
-npm run dev        # same, with auto-restart on file changes
+npm run dev        # auto-restart on changes
 ```
 
-Configuration (all optional) via environment variables — see `.env.example`:
+Configuration via environment variables (see `.env.example`):
 
-| Variable       | Default            | Purpose                                  |
-|----------------|--------------------|------------------------------------------|
-| `PORT`         | `4000`             | Port the API listens on                  |
-| `CORS_ORIGIN`  | `*`                | Allowed CORS origin (set to frontend URL)|
-| `PTW_DATA_DIR` | `./data`           | Directory for the SQLite file            |
-| `PTW_DB`       | `<data>/ptw.db`    | Full path to the SQLite database         |
+| Variable       | Default         | Purpose                                   |
+|----------------|-----------------|-------------------------------------------|
+| `PORT`         | `4000`          | Port the API listens on                   |
+| `CORS_ORIGIN`  | `*`             | Allowed CORS origin (set to frontend URL) |
+| `PTW_DATA_DIR` | `./data`        | Directory for the SQLite file             |
+| `PTW_DB`       | `<data>/ptw.db` | Full path to the SQLite database          |
 
 Requires Node.js **>= 22.5** (for `node:sqlite`).
 
 ## Data model
 
-Two related tables (`backend/src/db.js`):
+`backend/src/db.js` defines three tables:
 
-**permits**
-`id` (PK), `permit_no` (unique, immutable), `title`, `type`, `location`,
-`applicant`, `company`, `personnel`, `valid_from`, `valid_to`, `description`,
-`hazards` (JSON array), `status`, `approver`, `ppe`, `emergency`, `notes`,
-`ack`, `created_at`, `updated_at`.
+**tras** — `id` (PK), `tra_ref` (unique, immutable), `work_description`,
+`wo_swms_no`, `equipment`, `location`, `date_prepared`, `contractor`,
+`work_sponsor`, `dept_in_charge`, `parties` (JSON), `approver` (JSON), timestamps.
 
-**risks** (task risk assessment rows, one‑to‑many)
-`id` (PK), `permit_id` (FK → permits, `ON DELETE CASCADE`), `sort_order`,
-`hazard`, `l`, `s` (initial likelihood/severity), `controls`,
-`rl`, `rs` (residual likelihood/severity).
+**tra_steps** (one‑to‑many → tras, `ON DELETE CASCADE`) — `work_step`, `hazards`,
+`inherent_s`, `inherent_p`, `control_measures`, `control_type`, `residual_s`,
+`residual_p`, `remarks`, `sort_order`. Vulnerability (`s × p`) and the **HRV**
+are computed in the API, not stored.
 
-Permit create/update are wrapped in a transaction so the permit row and its
-risk rows are written atomically. Scores are clamped to 1–5; empty risk rows
-are discarded.
+**permits** — promoted/queryable columns (`id`, `ptw_no` unique+immutable,
+`work_order_no`, `tra_no`, `permit_class`, `work_description`, `area_location`,
+`permit_receiver`, `date_of_application`, `date_of_expiry`, `status`) plus a
+`data` JSON column holding the full payload for form Sections 1–10.
+
+TRA create/update wrap the parent row and its step rows in a transaction. Scores
+are clamped to 1–5; empty step rows are discarded.
+
+## Domain model (`/api/meta`)
+
+- **Risk levels** (V = S × P): Low 1–4, Moderate 5–9, High 10–14, Critical 15–25,
+  each mapped to an approval authority.
+- **Control types**: Elimination, Substitution, Engineering, Administrative, PPE.
+- **Clearances**: LOTO, Working at Heights, Lifting, Excavation, Fire/Gas
+  Detection, Fire Suppression, Hot Works, Confined Space, Work Over/Under Water,
+  Others.
+- **Permit classes**: Scheduled, Emergency, Outage.
+- **Permit statuses**: Draft, Submitted, Approved, Active, Suspended, Cancelled,
+  Closed.
 
 ## Endpoints
 
-| Method | Path             | Body              | Success      |
-|--------|------------------|-------------------|--------------|
-| GET    | `/api/health`    | —                 | `200`        |
-| GET    | `/api/permits`   | —                 | `200` array  |
-| GET    | `/api/permits/:id` | —               | `200` / `404`|
-| POST   | `/api/permits`   | permit (no id)    | `201` created|
-| PUT    | `/api/permits/:id` | permit          | `200` / `404`|
-| DELETE | `/api/permits/:id` | —               | `204` / `404`|
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/health` | — |
+| GET | `/api/meta` | Domain metadata for the frontend |
+| GET | `/api/tras` · `/api/tras/:id` | List / read |
+| POST | `/api/tras` | Create (assigns `tra_ref`) |
+| PUT | `/api/tras/:id` | Update |
+| DELETE | `/api/tras/:id` | Delete |
+| GET | `/api/permits` · `/api/permits/:id` | List / read |
+| POST | `/api/permits` | Create (assigns `ptw_no`) |
+| PUT | `/api/permits/:id` | Update |
+| DELETE | `/api/permits/:id` | Delete |
 
 ### Validation (`400`)
 
-`title`, `type`, `location`, `applicant`, `validFrom`, `validTo` are required;
-`validTo` must be ≥ `validFrom`; `status` must be one of the allowed values; and
-`ack` must be true before a permit can be `Approved` or `Active`. Errors return
-`{ "error": "...", "details": ["..."] }`.
+- **TRA**: `workDescription` required; `steps` must be an array.
+- **PTW**: `workDescription` and `permitReceiver` required; `permitClass` and
+  `status` must be valid; moving to **Approved/Active** requires a `traNo` that
+  references an existing TRA.
 
-### Example
-
-```bash
-curl -X POST http://localhost:4000/api/permits \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "Weld new handrail",
-    "type": "Hot Work",
-    "location": "Roof, Block C",
-    "applicant": "A. Smith",
-    "validFrom": "2026-06-14T09:00",
-    "validTo": "2026-06-14T12:00",
-    "status": "Draft",
-    "hazards": ["Hot work / fire"],
-    "risks": [
-      { "hazard": "Fire from sparks", "l": 4, "s": 4,
-        "controls": "Fire watch, extinguisher, clear combustibles", "rl": 2, "rs": 4 }
-    ]
-  }'
-```
+Errors return `{ "error": "...", "details": ["..."] }`.

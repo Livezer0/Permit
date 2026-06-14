@@ -1,53 +1,46 @@
-// REST routes for permits.
+// REST routes for Permits to Work (PTW).
 import { Router } from "express";
 import * as store from "./db.js";
+import { PERMIT_STATUSES, PERMIT_CLASSES } from "./domain.js";
 
 export const router = Router();
 
-const STATUSES = ["Draft", "Submitted", "Approved", "Active", "Suspended", "Closed"];
-
 function validate(body) {
   const errors = [];
-  const required = ["title", "type", "location", "applicant", "validFrom", "validTo"];
-  for (const f of required) {
-    if (!body[f] || String(body[f]).trim() === "") errors.push(`${f} is required`);
+  if (!body.workDescription || !String(body.workDescription).trim()) {
+    errors.push("workDescription is required");
   }
-  if (body.status && !STATUSES.includes(body.status)) {
-    errors.push(`status must be one of: ${STATUSES.join(", ")}`);
+  if (!body.permitReceiver || !String(body.permitReceiver).trim()) {
+    errors.push("permitReceiver is required");
   }
-  if (body.validFrom && body.validTo && body.validTo < body.validFrom) {
-    errors.push("validTo must be on or after validFrom");
+  if (body.permitClass && !PERMIT_CLASSES.includes(body.permitClass)) {
+    errors.push(`permitClass must be one of: ${PERMIT_CLASSES.join(", ")}`);
   }
-  if (["Approved", "Active"].includes(body.status) && !body.ack) {
-    errors.push("acknowledgement (ack) is required before Approved/Active");
+  if (body.status && !PERMIT_STATUSES.includes(body.status)) {
+    errors.push(`status must be one of: ${PERMIT_STATUSES.join(", ")}`);
   }
-  if (body.risks && !Array.isArray(body.risks)) {
-    errors.push("risks must be an array");
+  // A TRA must exist before a permit can be approved/issued.
+  if (["Approved", "Active"].includes(body.status)) {
+    if (!body.traNo) errors.push("a TRA No. is required before Approved/Active");
+    else if (!store.getTraByRef(body.traNo)) errors.push(`TRA '${body.traNo}' does not exist`);
   }
   return errors;
 }
 
-// GET /api/permits
-router.get("/", (req, res) => {
-  res.json(store.listPermits());
-});
+router.get("/", (_req, res) => res.json(store.listPermits()));
 
-// GET /api/permits/:id
 router.get("/:id", (req, res) => {
   const permit = store.getPermit(req.params.id);
   if (!permit) return res.status(404).json({ error: "Permit not found" });
   res.json(permit);
 });
 
-// POST /api/permits
 router.post("/", (req, res) => {
   const errors = validate(req.body || {});
   if (errors.length) return res.status(400).json({ error: "Validation failed", details: errors });
-  const created = store.createPermit(req.body);
-  res.status(201).json(created);
+  res.status(201).json(store.createPermit(req.body));
 });
 
-// PUT /api/permits/:id
 router.put("/:id", (req, res) => {
   const errors = validate(req.body || {});
   if (errors.length) return res.status(400).json({ error: "Validation failed", details: errors });
@@ -56,9 +49,7 @@ router.put("/:id", (req, res) => {
   res.json(updated);
 });
 
-// DELETE /api/permits/:id
 router.delete("/:id", (req, res) => {
-  const ok = store.deletePermit(req.params.id);
-  if (!ok) return res.status(404).json({ error: "Permit not found" });
+  if (!store.deletePermit(req.params.id)) return res.status(404).json({ error: "Permit not found" });
   res.status(204).end();
 });

@@ -1,35 +1,72 @@
-// Inserts one example permit if the database is empty.
+// Seeds one example TRA and one linked Permit when the database is empty.
 import * as store from "./db.js";
 
 export function seedIfEmpty() {
-  if (store.count() > 0) return;
+  if (store.countTras() > 0 || store.countPermits() > 0) return;
 
-  const now = new Date();
-  const from = new Date(now.getTime() + 3600e3);
-  const to = new Date(now.getTime() + 5 * 3600e3);
-  const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  const today = new Date().toISOString().slice(0, 10);
 
-  store.createPermit({
-    title: "Replace pump motor — Plant Room B",
-    type: "Electrical / Isolation",
+  const tra = store.createTra({
+    workDescription: "Replace failed circulation pump motor in Plant Room B",
+    woSwmsNo: "WO-44821",
+    equipment: "Circulation Pump P-204 / 3-phase motor",
     location: "Plant Room B, Level 2",
-    applicant: "J. Rivera",
-    company: "Acme Mechanical Ltd",
-    personnel: 2,
-    validFrom: iso(from),
-    validTo: iso(to),
-    description: "Isolate, remove and replace the failed circulation pump motor.",
-    hazards: ["Electricity", "Stored energy", "Manual handling", "Slips, trips & falls"],
-    risks: [
-      { hazard: "Electric shock during disconnection", l: 4, s: 5, controls: "Safe isolation, lock-off/tag-out, prove dead, insulated tools", rl: 1, rs: 5 },
-      { hazard: "Manual handling of motor (35 kg)", l: 3, s: 3, controls: "Two-person lift, mechanical aid, clear route", rl: 2, rs: 2 }
+    datePrepared: today,
+    contractor: "Acme Mechanical Ltd",
+    workSponsor: "Facilities Engineering",
+    deptInCharge: "Maintenance",
+    steps: [
+      {
+        workStep: "Isolate and disconnect motor wiring",
+        hazards: "Live electrical conductors — risk of electric shock / arc flash",
+        inherentS: 5, inherentP: 4,
+        controlMeasures: "Safe isolation, lock-off/tag-out, prove dead, insulated tools, arc-rated PPE",
+        controlType: "Engineering",
+        residualS: 5, residualP: 1,
+        remarks: "Isolation by authorised person only"
+      },
+      {
+        workStep: "Remove motor (35 kg) and install replacement",
+        hazards: "Manual handling — musculoskeletal injury / dropped load",
+        inherentS: 3, inherentP: 3,
+        controlMeasures: "Two-person lift, mechanical lifting aid, clear access route",
+        controlType: "Administrative",
+        residualS: 2, residualP: 2,
+        remarks: ""
+      }
     ],
-    status: "Approved",
-    approver: "S. Patel (Authorised Person)",
-    ppe: "Hard hat, safety boots, insulated gloves, eye protection",
-    emergency: "First-aider: M. Lin (ext 204). Muster point: North car park.",
-    ack: true
+    parties: {
+      facilitator: { name: "R. Okafor", designation: "SHE - Maintenance", signature: "", date: today },
+      contractorLead: { name: "T. Nguyen", designation: "Lead Fitter - Acme", signature: "", date: today },
+      areaOwner: { name: "D. Cole", designation: "Operations Rep", signature: "", date: today },
+      auxiliary: []
+    },
+    approver: { name: "S. Patel", designation: "Facility Head", signature: "", date: today }
   });
 
-  console.log("Seeded example permit.");
+  store.createPermit({
+    permitClass: "Scheduled",
+    workOrderNo: "WO-44821",
+    traNo: tra.traRef,
+    workDescription: "Replace failed circulation pump motor in Plant Room B",
+    areaLocation: "Plant Room B, Level 2",
+    permitReceiver: "J. Rivera",
+    contactNumber: "+1 555 0142",
+    dateOfApplication: today,
+    timeOfApplication: "08:30",
+    equipmentToWorkOn: "Circulation Pump P-204",
+    workParty: "Acme Mechanical Ltd",
+    workToBePerformed: "Isolate, remove and replace the failed circulation pump motor.",
+    newInstallation: "No",
+    modification: "No",
+    gasTestingRequired: "No",
+    clearances: { loto: true, fireSuppression: false, hotWorks: false },
+    specialMeasures: "Isolation clearance to be attached. Operations to be notified before energising.",
+    electricalIsolationOfficer: "K. Adeyemi",
+    initialWorkDuration: "4 hours",
+    dateOfExpiry: today,
+    status: "Approved"
+  });
+
+  console.log("Seeded example TRA and Permit.");
 }
