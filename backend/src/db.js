@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdirSync } from "node:fs";
-import { riskLevel } from "./domain.js";
+import { hrvFor } from "./domain.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = process.env.PTW_DATA_DIR || join(__dirname, "..", "data");
@@ -107,15 +107,6 @@ function stepToObj(r) {
     residualV: (r.residual_s || 0) * (r.residual_p || 0),
     remarks: r.remarks
   };
-}
-
-export function hrvFor(steps) {
-  const vals = (steps || []).map(s => (s.residualV != null
-    ? s.residualV
-    : (s.residualS || 0) * (s.residualP || 0)));
-  const v = vals.length ? Math.max(...vals) : 0;
-  const level = riskLevel(v);
-  return { value: v, level: level.key, label: level.label, color: level.color, authority: level.authority };
 }
 
 function traToObj(row, steps) {

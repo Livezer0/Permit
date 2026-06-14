@@ -53,6 +53,14 @@ Readiness · 10. Closeout.
 Permit status workflow: Draft → Submitted → Approved → Active →
 Suspended / Cancelled → Closed.
 
+### Layout & printing
+The editors are faithful on‑screen replicas of the source forms — the **TRA in
+landscape** (grid header, risk table with shaded vulnerability columns, parties
+tables, the coloured 5×5 risk matrix and authority legend) and the **PTW in
+portrait** (grey "Section X.0" header bars and bordered cells). Each editor has a
+**Print / PDF** button that prints the sheet in the correct page orientation, so
+you can export a filled‑in form that matches the original document.
+
 ## Running it
 
 You need two processes: the API and a static server for the frontend.

@@ -4,7 +4,7 @@ import cors from "cors";
 import { router as permitsRouter } from "./permits.js";
 import { router as trasRouter } from "./tras.js";
 import { seedIfEmpty } from "./seed.js";
-import { RISK_LEVELS, CONTROL_TYPES, CLEARANCES, PERMIT_CLASSES, PERMIT_STATUSES } from "./domain.js";
+import { META } from "./domain.js";
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -20,13 +20,7 @@ app.use((req, _res, next) => {
 app.get("/api/health", (_req, res) => res.json({ status: "ok", time: Date.now() }));
 
 // Expose form metadata so the frontend stays in sync with the domain model.
-app.get("/api/meta", (_req, res) => res.json({
-  riskLevels: RISK_LEVELS,
-  controlTypes: CONTROL_TYPES,
-  clearances: CLEARANCES,
-  permitClasses: PERMIT_CLASSES,
-  permitStatuses: PERMIT_STATUSES
-}));
+app.get("/api/meta", (_req, res) => res.json(META));
 
 app.use("/api/tras", trasRouter);
 app.use("/api/permits", permitsRouter);
