@@ -1,9 +1,9 @@
 /* Permit to Work — Task Risk Assessment
- * Zero-dependency SPA. Data persisted in localStorage. */
+ * Frontend SPA. Talks to the backend REST API; the database lives server-side. */
 (function () {
   "use strict";
 
-  const STORAGE_KEY = "ptw.permits.v1";
+  const API = (window.PTW_API_BASE || "http://localhost:4000") + "/api";
 
   const HAZARDS = [
     "Working at height", "Hot work / fire", "Confined space", "Electricity",
@@ -24,29 +24,38 @@
     return { low: "#30a46c", med: "#d9a514", high: "#e8801c", extreme: "#e5484d" }[css] || "#2a3547";
   }
 
-  /* ---------- Storage ---------- */
-  function loadAll() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-    catch (e) { return []; }
+  /* ---------- API client ---------- */
+  async function api(path, options) {
+    const res = await fetch(API + path, {
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+    if (res.status === 204) return null;
+    let body = null;
+    try { body = await res.json(); } catch { /* no body */ }
+    if (!res.ok) {
+      const msg = body && (body.details ? body.details.join("; ") : body.error) || ("HTTP " + res.status);
+      throw new Error(msg);
+    }
+    return body;
   }
-  function saveAll(list) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  }
-  function nextPermitNo(list) {
-    const year = new Date().getFullYear();
-    const seqs = list
-      .map(p => (p.permitNo || "").match(new RegExp("^PTW-" + year + "-(\\d+)$")))
-      .filter(Boolean)
-      .map(m => parseInt(m[1], 10));
-    const n = (seqs.length ? Math.max.apply(null, seqs) : 0) + 1;
-    return "PTW-" + year + "-" + String(n).padStart(3, "0");
-  }
-  function uid() {
-    return "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const apiList = () => api("/permits");
+  const apiCreate = (p) => api("/permits", { method: "POST", body: JSON.stringify(p) });
+  const apiUpdate = (id, p) => api("/permits/" + id, { method: "PUT", body: JSON.stringify(p) });
+  const apiDelete = (id) => api("/permits/" + id, { method: "DELETE" });
+
+  async function refresh() {
+    try {
+      permits = await apiList();
+      return true;
+    } catch (e) {
+      toast("Cannot reach API: " + e.message, "err");
+      return false;
+    }
   }
 
   /* ---------- App state ---------- */
-  let permits = loadAll();
+  let permits = [];   // cache of permits loaded from the API
   let current = null; // permit being edited
 
   /* ---------- DOM helpers ---------- */
@@ -171,22 +180,20 @@
 
   /* ---------- Editor ---------- */
   function blankPermit() {
+    // No id / permitNo yet — the server assigns these on create.
     return {
-      id: uid(),
-      permitNo: nextPermitNo(permits),
       title: "", type: "", location: "", applicant: "", company: "",
       personnel: 1, validFrom: "", validTo: "", description: "",
       hazards: [], risks: [],
-      status: "Draft", approver: "", ppe: "", emergency: "", notes: "", ack: false,
-      createdAt: Date.now(), updatedAt: Date.now()
+      status: "Draft", approver: "", ppe: "", emergency: "", notes: "", ack: false
     };
   }
 
   function openEditor(id) {
     current = id ? JSON.parse(JSON.stringify(permits.find(p => p.id === id))) : blankPermit();
-    const isNew = !id;
+    const isNew = !current.id;
     $("#editor-title").textContent = isNew ? "New Permit to Work" : "Edit Permit";
-    $("#editor-permitno").textContent = current.permitNo;
+    $("#editor-permitno").textContent = current.permitNo || "Permit number assigned on save";
     $("#delete-btn").classList.toggle("hidden", isNew);
 
     const f = $("#permit-form");
@@ -359,27 +366,34 @@
     return true;
   }
 
-  function savePermit() {
+  async function savePermit() {
     if (!validate()) return;
     collectForm();
-    current.updatedAt = Date.now();
-    const idx = permits.findIndex(p => p.id === current.id);
-    if (idx >= 0) permits[idx] = current;
-    else permits.push(current);
-    saveAll(permits);
-    toast("Permit " + current.permitNo + " saved.", "ok");
-    renderDashboard();
-    showView("dashboard");
+    try {
+      const saved = current.id
+        ? await apiUpdate(current.id, current)
+        : await apiCreate(current);
+      await refresh();
+      toast("Permit " + (saved ? saved.permitNo : "") + " saved.", "ok");
+      renderDashboard();
+      showView("dashboard");
+    } catch (e) {
+      toast("Save failed: " + e.message, "err");
+    }
   }
 
-  function deletePermit() {
-    if (!current) return;
+  async function deletePermit() {
+    if (!current || !current.id) return;
     if (!confirm("Delete permit " + current.permitNo + "? This cannot be undone.")) return;
-    permits = permits.filter(p => p.id !== current.id);
-    saveAll(permits);
-    toast("Permit deleted.", "");
-    renderDashboard();
-    showView("dashboard");
+    try {
+      await apiDelete(current.id);
+      await refresh();
+      toast("Permit deleted.", "");
+      renderDashboard();
+      showView("dashboard");
+    } catch (e) {
+      toast("Delete failed: " + e.message, "err");
+    }
   }
 
   /* ---------- Matrix help ---------- */
@@ -405,8 +419,9 @@
   }
 
   /* ---------- Wire up ---------- */
-  function init() {
+  async function init() {
     buildMatrixHelp();
+    await refresh();
     renderDashboard();
 
     document.addEventListener("click", (e) => {
@@ -432,43 +447,6 @@
     $("#filter-type").addEventListener("change", renderTable);
 
     $("#permit-form").addEventListener("submit", (e) => { e.preventDefault(); savePermit(); });
-
-    // Seed an example permit on first ever run so the dashboard isn't empty.
-    if (!localStorage.getItem(STORAGE_KEY) && permits.length === 0) {
-      seedExample();
-    }
-  }
-
-  function seedExample() {
-    const now = new Date();
-    const from = new Date(now.getTime() + 3600e3);
-    const to = new Date(now.getTime() + 5 * 3600e3);
-    const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-    const ex = blankPermit();
-    Object.assign(ex, {
-      title: "Replace pump motor — Plant Room B",
-      type: "Electrical / Isolation",
-      location: "Plant Room B, Level 2",
-      applicant: "J. Rivera",
-      company: "Acme Mechanical Ltd",
-      personnel: 2,
-      validFrom: iso(from),
-      validTo: iso(to),
-      description: "Isolate, remove and replace the failed circulation pump motor.",
-      hazards: ["Electricity", "Stored energy", "Manual handling", "Slips, trips & falls"],
-      risks: [
-        { hazard: "Electric shock during disconnection", l: 4, s: 5, controls: "Safe isolation, lock-off/tag-out, prove dead, insulated tools", rl: 1, rs: 5 },
-        { hazard: "Manual handling of motor (35 kg)", l: 3, s: 3, controls: "Two-person lift, mechanical aid, clear route", rl: 2, rs: 2 }
-      ],
-      status: "Approved",
-      approver: "S. Patel (Authorised Person)",
-      ppe: "Hard hat, safety boots, insulated gloves, eye protection",
-      emergency: "First-aider: M. Lin (ext 204). Muster point: North car park.",
-      ack: true
-    });
-    permits.push(ex);
-    saveAll(permits);
-    renderDashboard();
   }
 
   document.addEventListener("DOMContentLoaded", init);
