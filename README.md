@@ -42,17 +42,25 @@ Permit/
   auxiliary parties — and the **approver** sign‑off block.
 
 ### Permit to Work (PTW)
-Permit class (Scheduled / Emergency / Outage), PTW no. (auto `PTW-<year>-NNN`)
-and Work Order no., followed by Section 1 (Application).
+The permit editor is a **tabbed bundle** of the forms that go with a job:
 
-After the application details, an **"Applicable Permits & Documents"** picker
-lets you tick which supporting forms the job requires — **Task Risk Assessment
-(TRA)**, Gas Testing, Energy Isolation (LOTO), Hot Works, Confined Space Entry,
-Working at Heights, Excavation, Lifting Operation, Fire/Gas System Impairment.
-Only the ticked items expand into fillable sections, so you fill in exactly what
-applies. The TRA item links an existing risk assessment (or lets you create a new
-one). The core sections (Commencement, Cancellation/Suspension, Turn Over,
-Review, Restoration, Closeout) are always present.
+- **Permit to Work** — class (Scheduled / Emergency / Outage), auto PTW no.,
+  Section 1 application, the **Applicable Permits & Documents** picker, and the
+  core sections (Commencement, Cancellation/Suspension, Turn Over, Review,
+  Restoration, Closeout).
+- **Task Risk Assessment** — always present; link an existing TRA or create a new
+  one (every permit must have a TRA).
+- **Take 5 & Toolbox** — always present; the Take 5 / Toolbox Talk form (task,
+  hazard checklist, personnel sign-on/off, commitments).
+- **Hot Work Clearance** — appears as its own form/tab when *Hot Works* is ticked.
+- **Energy Isolation** — appears as its own landscape clearance form/tab (with
+  mechanical & electrical isolation registries) when *Energy Isolation (LOTO)* is
+  ticked.
+
+Other items in the picker (Gas Testing, Confined Space, Working at Heights,
+Excavation, Lifting, Fire/Gas impairment) expand inline on the Permit tab. Each
+tab prints in its correct orientation, and everything saves together as one
+permit record.
 
 Permit status workflow: Draft → Submitted → Approved → Active →
 Suspended / Cancelled → Closed.

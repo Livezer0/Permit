@@ -431,7 +431,86 @@
   /* ========================================================
      PERMIT TO WORK — portrait form sheet
      ======================================================== */
-  function blankPermit() { return { permitClass: "Scheduled", status: "Draft", clearances: {}, workDescription: "", permitReceiver: "" }; }
+  let permitTab = "permit";
+  function blankPermit() {
+    return {
+      permitClass: "Scheduled", status: "Draft", clearances: {}, workDescription: "", permitReceiver: "",
+      take5: { before: {}, after: {}, hazards: {}, members: [] },
+      hotWorkClearance: { mandatory: {}, precautions: {}, operators: [], fireWatch: [] },
+      energyIsolation: { mechanical: [], electrical: [] }
+    };
+  }
+  function ensurePermitDefaults() {
+    const p = curPermit;
+    p.clearances = p.clearances || {};
+    p.take5 = p.take5 || {}; p.take5.before = p.take5.before || {}; p.take5.after = p.take5.after || {};
+    p.take5.hazards = p.take5.hazards || {}; p.take5.members = p.take5.members || [];
+    p.hotWorkClearance = p.hotWorkClearance || {};
+    p.hotWorkClearance.mandatory = p.hotWorkClearance.mandatory || {};
+    p.hotWorkClearance.precautions = p.hotWorkClearance.precautions || {};
+    p.hotWorkClearance.operators = p.hotWorkClearance.operators || [];
+    p.hotWorkClearance.fireWatch = p.hotWorkClearance.fireWatch || [];
+    p.energyIsolation = p.energyIsolation || {};
+    p.energyIsolation.mechanical = p.energyIsolation.mechanical || [];
+    p.energyIsolation.electrical = p.energyIsolation.electrical || [];
+  }
+
+  // Constants for repeating checkbox lists.
+  const HW_PRECAUTIONS = [
+    ["welderNCII", "Welder's NCII"], ["weldingMask", "Welding mask"], ["weldingGloves", "Welding gloves"],
+    ["apronLeggings", "Welding apron + leggings"], ["barriers", "Barriers & warning signs"],
+    ["fireBlanket", "Fire blanket"], ["ventilation", "Ventilation"], ["respirator", "Respirator or mask"],
+    ["gauges", "Gauges (tank & regulator)"], ["flashback", "Flashback arrestor"],
+    ["gasMonitoring", "Gas monitoring"], ["nonSparking", "Non-sparking tools"], ["gfci", "GFCI lighting"],
+    ["intrinsic", "Intrinsically safe devices"], ["grounded", "Grounded electrical tools"],
+    ["protectiveDisc", "Protective disconnects"], ["explosionTest", "Explosion potential tests reqd."],
+    ["fireHose", "Fire hose(s) prepared"], ["intlCerts", "International Certs"], ["others", "Others"]
+  ];
+  const TAKE5_HAZARDS = [
+    ["fire", "Fire"], ["flooding", "Flooding"], ["fallHeight", "Fall from Height"], ["lowOxygen", "Low Oxygen"],
+    ["electricity", "Electricity"], ["openWater", "Open water"], ["chemicals", "Chemicals"],
+    ["confinedSpace", "Confined Space"], ["maneuverability", "Maneuverability"], ["visibility", "Visibility"], ["others", "Others"]
+  ];
+  const TAKE5_COLS = [
+    { key: "name" }, { key: "designation" }, { key: "signOn" }, { key: "signOnAt", type: "datetime-local" },
+    { key: "signOff" }, { key: "signOffAt", type: "datetime-local" }
+  ];
+  const HWOP_COLS = [{ key: "name" }, { key: "start", type: "time" }, { key: "end", type: "time" }, { key: "signature" }];
+  const ISO_COLS = [
+    { key: "equipmentId" }, { key: "pointOfIsolation" }, { key: "initialPosition" },
+    { key: "isoDate", type: "date" }, { key: "isoTime", type: "time" }, { key: "isolatedState" },
+    { key: "lockNo" }, { key: "tagNo" }, { key: "isolatedBy" }, { key: "witnessedBy" },
+    { key: "deisoBy" }, { key: "sanction" }
+  ];
+
+  // Build the input cells for one object row.
+  function rowInputs(obj, cols) {
+    return cols.map(c => {
+      const td = el("td");
+      const node = el("input", { class: "cell-in", ...(c.type ? { type: c.type } : {}) });
+      node.value = obj[c.key] == null ? "" : obj[c.key];
+      node.addEventListener("input", () => { obj[c.key] = node.value; });
+      td.appendChild(node);
+      return td;
+    });
+  }
+  // Render a dynamic table body bound to an array of row objects.
+  function renderRows(tbodyId, arr, cols, numbered) {
+    const tb = $("#" + tbodyId);
+    if (!tb) return;
+    tb.innerHTML = "";
+    if (!arr.length) arr.push({});
+    arr.forEach((o, i) => {
+      const tr = el("tr");
+      if (numbered) tr.appendChild(el("td", { class: "c-num" }, [String(i + 1)]));
+      rowInputs(o, cols).forEach(td => tr.appendChild(td));
+      tr.appendChild(el("td", { class: "c-del noprint" }, [
+        el("button", { class: "row-del", type: "button", title: "Remove",
+          onClick: () => { arr.splice(i, 1); renderRows(tbodyId, arr, cols, numbered); } }, ["×"])
+      ]));
+      tb.appendChild(tr);
+    });
+  }
 
   function cls(val) { return `<label class="tick"><input type="checkbox" data-class="${val}"/> ${val}</label>`; }
   function ck(path, label) { return `<label class="tick"><input type="checkbox" data-k="${path}"/> ${label}</label>`; }
@@ -444,12 +523,11 @@
   function lc(label, path, attrs) { return `<div class="mini-lbl">${label}</div>${inp(path, attrs)}`; }
   function lcTa(label, path) { return `<div class="mini-lbl">${label}</div>${txt(path)}`; }
 
-  // Supporting documents / permits that can be attached to a Permit to Work.
+  // Optional supporting permits/documents (TRA & Take 5 are always included).
   const DOCS = [
-    { key: "tra", label: "Task Risk Assessment (TRA)" },
     { key: "gasTesting", label: "Gas Testing" },
-    { key: "loto", label: "Energy Isolation (LOTO)" },
-    { key: "hotWorks", label: "Hot Works" },
+    { key: "loto", label: "Energy Isolation (LOTO) — separate clearance form" },
+    { key: "hotWorks", label: "Hot Works — separate clearance form" },
     { key: "confinedSpace", label: "Confined Space Entry" },
     { key: "workingAtHeights", label: "Working at Heights" },
     { key: "excavation", label: "Excavation" },
@@ -457,26 +535,14 @@
     { key: "fireSuppression", label: "Fire/Gas System Impairment" }
   ];
   function docOn(key) {
-    if (key === "tra") return curPermit.traRequired != null ? !!curPermit.traRequired : !!curPermit.traNo;
     if (key === "gasTesting") return curPermit.gasTestingRequired === "Yes";
     return !!(curPermit.clearances && curPermit.clearances[key]);
   }
   function setDoc(key, val) {
-    if (key === "tra") curPermit.traRequired = val;
-    else if (key === "gasTesting") curPermit.gasTestingRequired = val ? "Yes" : "No";
+    if (key === "gasTesting") curPermit.gasTestingRequired = val ? "Yes" : "No";
     else { curPermit.clearances = curPermit.clearances || {}; curPermit.clearances[key] = val; }
   }
 
-  function traBlock() {
-    const opts = `<option value="">— select an existing TRA —</option>` +
-      tras.map(t => `<option value="${esc(t.traRef)}">${esc(t.traRef)} — ${esc(t.workDescription || "")}</option>`).join("");
-    return `<div class="sec-bar">Task Risk Assessment (TRA)</div>
-      <table class="ptw"><tr>
-        <td colspan="2"><div class="mini-lbl">Linked TRA No.</div><select class="cell-in" data-k="traNo">${opts}</select></td>
-        <td colspan="2" class="noprint" style="vertical-align:bottom">
-          <button type="button" class="btn ghost small" data-action="new-tra-from-permit">+ Create new TRA</button></td>
-      </tr></table>`;
-  }
   function gasBlock() {
     return `<div class="sec-bar">Section 2.0: GAS TESTING (Permit Issuer &amp; Gas Tester)</div>
       <table class="ptw">
@@ -485,29 +551,6 @@
         <tr><td>${lc("%O2 (19.5–23.5%)", "o2")}</td><td>${lc("H2S (0 ppm)", "h2s")}</td>
             <td>${lc("LEL (0%)", "lel")}</td><td>${lc("CO (0 ppm)", "co")}</td></tr>
         <tr><td colspan="4">${lc("Other Gases", "otherGases")}</td></tr>
-      </table>`;
-  }
-  function lotoBlock() {
-    return `<div class="sec-bar">Section 4.0: LOCK-OUT, TAG-OUT (Isolation Officer)</div>
-      <table class="ptw">
-        <tr><td>${lc("Electrical Isolation — Officer", "electricalIsolationOfficer")}</td>
-          <td>${lc("Date", "electricalIsolationDate", 'type="date"')}</td>
-          <td>${lc("Time", "electricalIsolationTime", 'type="time"')}</td>
-          <td rowspan="3">${lcTa("Special Measures for Isolation", "isolationSpecialMeasures")}</td></tr>
-        <tr><td>${lc("Mechanical Isolation — Officer", "mechanicalIsolationOfficer")}</td>
-          <td>${lc("Date", "mechanicalIsolationDate", 'type="date"')}</td>
-          <td>${lc("Time", "mechanicalIsolationTime", 'type="time"')}</td></tr>
-        <tr><td>${lc("Zero Energy Test — Officer", "zeroEnergyTestOfficer")}</td>
-          <td>${lc("Date", "zeroEnergyTestDate", 'type="date"')}</td>
-          <td>${lc("Time", "zeroEnergyTestTime", 'type="time"')}</td></tr>
-      </table>`;
-  }
-  function hotWorksBlock() {
-    return `<div class="sec-bar">Hot Works</div>
-      <table class="ptw">
-        <tr><td>${lc("Fire watch (name)", "fireWatchName")}</td><td>${lc("Fire watch duration", "fireWatchDuration")}</td>
-            <td colspan="2">${lc("Fire extinguisher location", "extinguisherLocation")}</td></tr>
-        <tr><td colspan="4">${lcTa("Hot work precautions", "hotWorkPrecautions")}</td></tr>
       </table>`;
   }
   function confinedSpaceBlock() {
@@ -551,16 +594,13 @@
   }
   function condBlocksHtml() {
     let h = "";
-    if (docOn("tra")) h += traBlock();
     if (docOn("gasTesting")) h += gasBlock();
-    if (docOn("loto")) h += lotoBlock();
-    if (docOn("hotWorks")) h += hotWorksBlock();
     if (docOn("confinedSpace")) h += confinedSpaceBlock();
     if (docOn("workingAtHeights")) h += wahBlock();
     if (docOn("excavation")) h += excavationBlock();
     if (docOn("lifting")) h += liftingBlock();
     if (docOn("fireSuppression")) h += impairmentBlock();
-    if (!h) h = `<p class="ptw-hint">No supporting documents selected yet — tick the items above that apply to this job and their forms will appear here.</p>`;
+    if (!h) h = `<p class="ptw-hint">Hot Works and Energy Isolation open their own clearance tabs above. Tick any other items to add their details here.</p>`;
     return h;
   }
   function renderConditional() {
@@ -568,14 +608,184 @@
     if (!c) return;
     c.innerHTML = condBlocksHtml();
     bindSheet(c, curPermit);
-    const t = $('[data-k="traNo"]', c); if (t) t.value = curPermit.traNo || "";
   }
 
-  function buildPermitSheet() {
-    const body = $("#permit-form-body");
-    const statusOpts = META.permitStatuses.map(s => `<option value="${s}">${s}</option>`).join("");
+  /* ----- TRA tab (link existing or create new) ----- */
+  function traSummaryHtml(t) {
+    const h = t.hrv || {};
+    const rows = (t.steps || []).map((s, i) =>
+      `<tr><td class="c-num">${i + 1}</td><td>${esc(s.workStep || "")}</td><td>${esc(s.hazards || "")}</td>
+        <td class="c-v">${(s.residualS || 0) * (s.residualP || 0) || ""}</td></tr>`).join("");
+    return `<div class="sec-bar" style="background:${h.color || '#d6d6d6'}">Linked TRA: ${esc(t.traRef)} — HRV ${h.value || "–"} (${esc(h.label || "–")})</div>
+      <table class="ptw"><thead><tr><th class="c-num">#</th><th>Work Step</th><th>Hazard(s)</th><th class="c-v">Residual V</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="muted">No steps recorded</td></tr>'}</tbody></table>`;
+  }
+  function traPanelHtml() {
+    const opts = `<option value="">— select an existing TRA —</option>` +
+      tras.map(t => `<option value="${esc(t.traRef)}">${esc(t.traRef)} — ${esc(t.workDescription || "")}</option>`).join("");
+    const linked = tras.find(t => t.traRef === curPermit.traNo);
+    return `<div class="sheet-scroll"><div class="sheet sheet-portrait">
+      <div class="sheet-title">TASK RISK ASSESSMENT</div>
+      <p class="ptw-note">Every permit must have a Task Risk Assessment. Link an existing one or create a new TRA.</p>
+      <table class="ptw"><tr>
+        <td colspan="2"><div class="mini-lbl">Linked TRA No.</div><select class="cell-in" data-k="traNo">${opts}</select></td>
+        <td class="noprint" style="vertical-align:bottom"><button type="button" class="btn ghost small" data-action="new-tra-from-permit">+ Create new TRA</button></td>
+        <td class="noprint" style="vertical-align:bottom">${linked ? '<button type="button" class="btn ghost small" data-action="edit-linked-tra">Open linked TRA</button>' : ""}</td>
+      </tr></table>
+      ${linked ? traSummaryHtml(linked) : '<p class="ptw-hint">No TRA linked yet — select one above or create a new one.</p>'}
+    </div></div>`;
+  }
 
-    body.innerHTML = `
+  /* ----- Take 5 & Toolbox Talk tab ----- */
+  function take5SheetHtml() {
+    const hazRows = TAKE5_HAZARDS.map(([k, l]) =>
+      `<tr><td>${l}</td><td class="c-chk"><input type="checkbox" data-k="take5.hazards.${k}.present"/></td>
+        <td>${inp("take5.hazards." + k + ".action")}</td></tr>`).join("");
+    return `<div class="sheet-scroll"><div class="sheet sheet-portrait">
+      <div class="sheet-title">TAKE 5 AND TOOLBOX TALK</div>
+      <table class="ptw"><tr><td>${lc("Date", "take5.date", 'type="date"')}</td>
+        <td colspan="2">${lc("PTW Ref. No.", "ptwNo", "disabled")}</td></tr></table>
+      <p class="ptw-note">Accomplish before and after the work shift. Not valid without the PTW.</p>
+
+      <div class="sec-bar">Section 1: TASK FOR THE DAY/SHIFT (Permit Receiver)</div>
+      <table class="ptw"><tr><td colspan="4">${lcTa("State area, location, site, activity, unit no.; contractor or organic", "take5.task")}</td></tr></table>
+
+      <div class="sec-bar">Section 2.1: BEFORE YOU START — discuss the following (tick if discussed)</div>
+      <table class="ptw"><tr><td class="clears" colspan="4">
+        ${ck("take5.before.scope", "Scope of work")}${ck("take5.before.tra", "Task Risk Assessment (specific measures)")}
+        ${ck("take5.before.human", "Human factors (disabilities, phobias, allergies)")}${ck("take5.before.clearances", "Hazardous activities (clearances)")}
+        ${ck("take5.before.fiveS", "5S, surroundings, loose/falling materials")}${ck("take5.before.ppe", "PPE required")}
+        ${ck("take5.before.tools", "Tools and equipment required")}
+      </td></tr></table>
+
+      <div class="sec-bar">Potential Hazards &amp; Action Plan for Mitigation</div>
+      <table class="ptw"><thead><tr><th>Potential Hazard</th><th class="c-chk">Present?</th><th>Action Plan for Hazard Mitigation</th></tr></thead>
+        <tbody>${hazRows}</tbody></table>
+
+      <div class="sec-bar">Section 2.2: AFTER COMPLETING THE TASK (tick)</div>
+      <table class="ptw"><tr><td class="clears" colspan="4">
+        ${ck("take5.after.completed", "Task completed as planned")}${ck("take5.after.cleared", "Worksite cleared of debris")}
+        ${ck("take5.after.newHazards", "Work introduced new hazards")}
+      </td></tr>
+      <tr><td colspan="4">${lcTa("If new hazards, state control measures implemented", "take5.after.newHazardControls")}</td></tr></table>
+
+      <div class="sec-bar">Section 3: TOOLBOX TALK CONTENTS (Permit Receiver)</div>
+      <table class="ptw"><tr><td colspan="4">${lcTa("Other topics discussed", "take5.toolboxContents")}</td></tr></table>
+
+      <div class="sec-bar">Section 4: DAILY COMMITMENT TO WORKING SAFELY (Work Party)</div>
+      <table class="ptw"><thead><tr><th class="c-num">#</th><th>Name</th><th>Designation</th>
+        <th>Sign On</th><th>Sign On (date/time)</th><th>Sign Off</th><th>Sign Off (date/time)</th><th class="c-del noprint"></th></tr></thead>
+        <tbody id="take5-members"></tbody></table>
+      <button type="button" class="btn ghost small noprint" data-action="add-take5-member">+ Add personnel</button>
+
+      <div class="sec-bar">Section 5: WORK PARTY CLEARANCE (Permit Receiver)</div>
+      <table class="ptw"><tr><td colspan="2">${lc("Permit Receiver Signature", "take5.receiverSig")}</td>
+        <td>${lc("Date", "take5.receiverDate", 'type="date"')}</td><td>${lc("Time", "take5.receiverTime", 'type="time"')}</td></tr></table>
+
+      <div class="sec-bar">Section 6: AFTER WORK TOOLBOX (Permit Issuer)</div>
+      <table class="ptw"><tr><td colspan="2">${lc("Permit Issuer Signature", "take5.issuerSig")}</td>
+        <td>${lc("Date", "take5.issuerDate", 'type="date"')}</td><td>${lc("Time", "take5.issuerTime", 'type="time"')}</td></tr></table>
+    </div></div>`;
+  }
+
+  /* ----- Hot Work Clearance tab ----- */
+  function hotWorkSheetHtml() {
+    return `<div class="sheet-scroll"><div class="sheet sheet-portrait">
+      <div class="sheet-title">HOT WORK CLEARANCE</div>
+      <table class="ptw"><tr><td>${lc("Date", "hotWorkClearance.date", 'type="date"')}</td>
+        <td>${lc("PTW Ref. #", "ptwNo", "disabled")}</td><td>${lc("Clearance #", "hotWorkClearance.clearanceNo")}</td></tr></table>
+      <p class="ptw-note">Hot work = any activity creating sparks/open flame (welding, brazing, soldering, cutting, grinding). Not valid without the PTW; secure every work shift.</p>
+
+      <div class="sec-bar">Section 2: HOT WORK DESCRIPTION</div>
+      <table class="ptw"><tr><td colspan="4">${lcTa("Work description and location", "hotWorkClearance.workDescription")}</td></tr>
+        <tr><td colspan="4">${lc("Equipment affected", "hotWorkClearance.equipmentAffected")}</td></tr></table>
+
+      <div class="sec-bar">Section 3: MANDATORY REQUIREMENTS (Work Party &amp; Permit Receiver)</div>
+      <table class="ptw"><tr><td class="clears" colspan="4">
+        ${ck("hotWorkClearance.mandatory.equipChecked", "Equipment checked &amp; in good condition")}
+        ${ck("hotWorkClearance.mandatory.escapeRoutes", "Escape routes provided + kept clear")}
+        ${ck("hotWorkClearance.mandatory.trainedWatcher", "Trained fire watcher")}
+        ${ck("hotWorkClearance.mandatory.gloves", "Appropriate gloves, type:")}${inp("hotWorkClearance.glovesType")}
+        ${ck("hotWorkClearance.mandatory.extinguisher", "Fire extinguisher/s, type:")}${inp("hotWorkClearance.extinguisherType")}
+      </td></tr></table>
+
+      <div class="sec-bar">Section 4: WORKSITE PRECAUTIONS — tick as applicable</div>
+      <table class="ptw"><tr><td class="clears" colspan="4">${HW_PRECAUTIONS.map(([k, l]) => ck("hotWorkClearance.precautions." + k, l)).join("")}</td></tr></table>
+
+      <div class="sec-bar">Section 5: WORK PARTY — Hot Work Operator / Welder</div>
+      <table class="ptw"><thead><tr><th>Name</th><th>Work START</th><th>Work END</th><th>Signature</th><th class="c-del noprint"></th></tr></thead>
+        <tbody id="hw-operators"></tbody></table>
+      <button type="button" class="btn ghost small noprint" data-action="add-hw-operator">+ Add operator</button>
+
+      <div class="sec-bar">Fire Watch</div>
+      <table class="ptw"><thead><tr><th>Name</th><th>Fire Watch START</th><th>Fire Watch END</th><th>Signature</th><th class="c-del noprint"></th></tr></thead>
+        <tbody id="hw-firewatch"></tbody></table>
+      <button type="button" class="btn ghost small noprint" data-action="add-hw-firewatch">+ Add fire watch</button>
+
+      <div class="sec-bar">Section 6: APPROVAL &amp; WORK INSTRUCTIONS (Permit Issuer)</div>
+      <table class="ptw">
+        <tr><td>Gas test needed? ${yn("hotWorkClearance.gasTestNeeded")}</td>
+          <td>${lc("Min. fire watch (hrs)", "hotWorkClearance.fireWatchHours")}</td>
+          <td>${lc("Min. fire watch (mins)", "hotWorkClearance.fireWatchMins")}</td>
+          <td>${lc("Gas test every (hrs)", "hotWorkClearance.gasEvery")}</td></tr>
+        <tr><td>${lc("Work start", "hotWorkClearance.workStart", 'type="datetime-local"')}</td>
+          <td>${lc("Work end", "hotWorkClearance.workEnd", 'type="datetime-local"')}</td>
+          <td colspan="2">${lc("Gas Monitoring Log No. (if attached)", "hotWorkClearance.gasLogNo")}</td></tr>
+        <tr><td colspan="4">${lcTa("Special instructions", "hotWorkClearance.specialInstructions")}</td></tr>
+        <tr><td colspan="2">${lc("Permit Receiver signature (area prepared, may proceed safely)", "hotWorkClearance.receiverSig")}</td>
+          <td>${lc("Date", "hotWorkClearance.receiverDate", 'type="date"')}</td><td>${lc("Time", "hotWorkClearance.receiverTime", 'type="time"')}</td></tr>
+        <tr><td colspan="2">${lc("Permit Issuer signature (may proceed for given duration)", "hotWorkClearance.issuerSig")}</td>
+          <td>${lc("Date", "hotWorkClearance.issuerDate", 'type="date"')}</td><td>${lc("Time", "hotWorkClearance.issuerTime", 'type="time"')}</td></tr>
+      </table>
+
+      <div class="sec-bar">Section 7: HOT WORK CLOSE-OUT (Fire Watch &amp; Permit Receiver)</div>
+      <table class="ptw">
+        <tr><td colspan="2">${lc("Permit Receiver signature (hot work completed, site cleared)", "hotWorkClearance.closeReceiverSig")}</td>
+          <td>${lc("Date", "hotWorkClearance.closeReceiverDate", 'type="date"')}</td><td>${lc("Time", "hotWorkClearance.closeReceiverTime", 'type="time"')}</td></tr>
+        <tr><td colspan="2">${lc("Permit Issuer signature (site cleared, equipment returned)", "hotWorkClearance.closeIssuerSig")}</td>
+          <td>${lc("Date", "hotWorkClearance.closeIssuerDate", 'type="date"')}</td><td>${lc("Time", "hotWorkClearance.closeIssuerTime", 'type="time"')}</td></tr>
+      </table>
+    </div></div>`;
+  }
+
+  /* ----- Energy Isolation Clearance tab (landscape) ----- */
+  function isoHead() {
+    return `<thead><tr><th class="c-num">#</th><th>Equipment ID</th><th>Point of Isolation</th><th>Initial Position</th>
+      <th>Iso Date</th><th>Iso Time</th><th>Isolated State</th><th>Lock No.</th><th>Tag No.</th>
+      <th>Isolated by</th><th>Zero-energy witnessed by</th><th>De-isolated by</th><th>Sanction to test?</th><th class="c-del noprint"></th></tr></thead>`;
+  }
+  function isoSheetHtml() {
+    return `<div class="sheet-scroll"><div class="sheet sheet-landscape">
+      <div class="sheet-title">ENERGY ISOLATION CLEARANCE</div>
+      <p class="ptw-note">Not valid without the PTW. One sheet per LOTO box. Put N/A for not applicable entries.</p>
+      <table class="ptw">
+        <tr><td>${lc("Date", "energyIsolation.date", 'type="date"')}</td>
+          <td>${lc("Points of Isolation Identified by", "energyIsolation.identifiedBy")}</td>
+          <td>${lc("PTW #", "ptwNo", "disabled")}</td>
+          <td>${lc("Clearance #", "energyIsolation.clearanceNo")}</td>
+          <td>${lc("LOTO Box No.", "energyIsolation.lotoBoxNo")}</td></tr>
+        <tr><td>${lc("WP Padlock No.", "energyIsolation.wpPadlock")}</td>
+          <td>${lc("PR Padlock No.", "energyIsolation.prPadlock")}</td>
+          <td>${lc("PI Padlock No.", "energyIsolation.piPadlock")}</td>
+          <td>${lc("Permit Issuer (sign &amp; time)", "energyIsolation.issuerSig")}</td>
+          <td>${lc("Permit Receiver (sign)", "energyIsolation.receiverSig")}</td></tr>
+      </table>
+
+      <div class="sec-bar">Section 1.0: MECHANICAL ISOLATION REGISTRY (steam, compressed air, pressurized fluid, etc.)</div>
+      <table class="ptw iso">${isoHead()}<tbody id="iso-mech"></tbody></table>
+      <button type="button" class="btn ghost small noprint" data-action="add-iso-mech">+ Add isolation point</button>
+      <table class="ptw"><tr><td colspan="4">${lcTa("Comments / special conditions (mechanical)", "energyIsolation.mechComments")}</td></tr></table>
+
+      <div class="sec-bar">Section 2.0: ELECTRICAL ISOLATION REGISTRY (electricity)</div>
+      <table class="ptw iso">${isoHead()}<tbody id="iso-elec"></tbody></table>
+      <button type="button" class="btn ghost small noprint" data-action="add-iso-elec">+ Add isolation point</button>
+      <table class="ptw"><tr><td colspan="4">${lcTa("Comments / special conditions (electrical)", "energyIsolation.elecComments")}</td></tr></table>
+    </div></div>`;
+  }
+
+  function ptwSheetHtml() {
+    const statusOpts = META.permitStatuses.map(s => `<option value="${s}">${s}</option>`).join("");
+    return `
     <div class="sheet-scroll"><div class="sheet sheet-portrait" id="permit-sheet">
       <table class="ptw-top">
         <tr>
@@ -670,38 +880,103 @@
           <td>${lc("Date", "closeoutDate", 'type="date"')}</td><td>${lc("Time", "closeoutTime", 'type="time"')}</td></tr>
       </table>
     </div></div>`;
+  }
 
-    const refIn = $('[data-k="ptwNo"]', body); if (refIn) refIn.value = curPermit.ptwNo || "";
-    bindSheet(body, curPermit);
-    $('[data-k="status"]', body).value = curPermit.status || "Draft";
-    $$('[data-class]', body).forEach(cb => {
+  function permitTabs() {
+    const t = [
+      { k: "permit", label: "Permit to Work" },
+      { k: "tra", label: "Task Risk Assessment" },
+      { k: "take5", label: "Take 5 & Toolbox" }
+    ];
+    if (docOn("hotWorks")) t.push({ k: "hotwork", label: "Hot Work Clearance" });
+    if (docOn("loto")) t.push({ k: "isolation", label: "Energy Isolation" });
+    return t;
+  }
+  function panelHtml(k) {
+    if (k === "permit") return ptwSheetHtml();
+    if (k === "tra") return traPanelHtml();
+    if (k === "take5") return take5SheetHtml();
+    if (k === "hotwork") return hotWorkSheetHtml();
+    if (k === "isolation") return isoSheetHtml();
+    return "";
+  }
+  function switchPermitTab(k) {
+    permitTab = k;
+    $$("#ptw-tabs .tab-btn").forEach(b => b.classList.toggle("active", b.getAttribute("data-ptab") === k));
+    $$("#ptw-panels .tab-panel").forEach(p => p.classList.toggle("active", p.getAttribute("data-tab") === k));
+    setPageOrient(k === "isolation" ? "landscape" : "portrait");
+  }
+  function buildPermitEditor() {
+    ensurePermitDefaults();
+    const tabs = permitTabs();
+    if (!tabs.find(t => t.k === permitTab)) permitTab = "permit";
+    const body = $("#permit-form-body");
+    body.innerHTML = `<div class="tabbar" id="ptw-tabs"></div><div id="ptw-panels"></div>`;
+
+    const tabbar = $("#ptw-tabs", body);
+    tabs.forEach(t => {
+      const b = el("button", { class: "tab-btn", type: "button", "data-ptab": t.k,
+        onClick: () => switchPermitTab(t.k) }, [t.label]);
+      tabbar.appendChild(b);
+    });
+
+    const panels = $("#ptw-panels", body);
+    tabs.forEach(t => {
+      const div = el("div", { class: "tab-panel", "data-tab": t.k });
+      div.innerHTML = panelHtml(t.k);
+      panels.appendChild(div);
+    });
+
+    bindSheet(panels, curPermit);
+    $$('[data-k="ptwNo"]', panels).forEach(n => { n.value = curPermit.ptwNo || ""; });
+    const st = $('[data-k="status"]', panels); if (st) st.value = curPermit.status || "Draft";
+    const tno = $('[data-k="traNo"]', panels); if (tno) tno.value = curPermit.traNo || "";
+
+    $$('[data-class]', panels).forEach(cb => {
       const v = cb.getAttribute("data-class");
       cb.checked = curPermit.permitClass === v;
       cb.addEventListener("change", () => {
         curPermit.permitClass = cb.checked ? v : "";
-        $$('[data-class]', body).forEach(ob => { if (ob !== cb) ob.checked = false; });
+        $$('[data-class]', panels).forEach(ob => { if (ob !== cb) ob.checked = false; });
       });
     });
 
-    // "Applicable Permits & Documents" picker drives which forms appear below.
-    const dsel = $("#doc-select", body);
-    DOCS.forEach(d => {
+    // Document picker (controls inline blocks and the clearance tabs).
+    const dsel = $("#doc-select", panels);
+    if (dsel) DOCS.forEach(d => {
       const cb = el("input", { type: "checkbox" });
       cb.checked = docOn(d.key);
-      cb.addEventListener("change", () => { setDoc(d.key, cb.checked); renderConditional(); });
+      cb.addEventListener("change", () => {
+        setDoc(d.key, cb.checked);
+        if (d.key === "hotWorks" || d.key === "loto") buildPermitEditor(); // add/remove tab
+        else renderConditional();
+      });
       dsel.appendChild(el("label", { class: "tick" }, [cb, " " + d.label]));
     });
     renderConditional();
+
+    // Dynamic tables.
+    renderRows("take5-members", curPermit.take5.members, TAKE5_COLS, true);
+    if (docOn("hotWorks")) {
+      renderRows("hw-operators", curPermit.hotWorkClearance.operators, HWOP_COLS, false);
+      renderRows("hw-firewatch", curPermit.hotWorkClearance.fireWatch, HWOP_COLS, false);
+    }
+    if (docOn("loto")) {
+      renderRows("iso-mech", curPermit.energyIsolation.mechanical, ISO_COLS, true);
+      renderRows("iso-elec", curPermit.energyIsolation.electrical, ISO_COLS, true);
+    }
+
+    switchPermitTab(permitTab);
   }
 
   function openPermitEditor(id) {
     curPermit = id ? JSON.parse(JSON.stringify(permits.find(p => p.id === id))) : blankPermit();
-    curPermit.clearances = curPermit.clearances || {};
+    permitTab = "permit";
     const isNew = !curPermit.id;
     $("#permit-editor-title").textContent = isNew ? "New Permit to Work" : "Edit Permit";
     $("#permit-editor-no").textContent = curPermit.ptwNo || "Permit number assigned on save";
     $("#permit-delete").classList.toggle("hidden", isNew);
-    buildPermitSheet();
+    buildPermitEditor();
     showView("permit-editor");
   }
   async function savePermit() {
@@ -721,25 +996,40 @@
     catch (e) { toast("Delete failed: " + e.message, "err"); }
   }
 
-  // From the permit editor: save the permit as a draft, then start a new TRA.
-  async function newTraFromPermit() {
+  // Save the current permit as a draft so edits aren't lost on navigation.
+  async function persistPermitDraft() {
     if (!curPermit.workDescription || !curPermit.workDescription.trim() ||
         !curPermit.permitReceiver || !curPermit.permitReceiver.trim()) {
-      toast("Enter Work Description and Permit Receiver first, so the permit can be saved while you create the TRA.", "err");
-      return;
+      toast("Enter Work Description and Permit Receiver first so the permit can be saved.", "err");
+      return false;
     }
     try {
       const saved = curPermit.id ? await api("/permits/" + curPermit.id, { method: "PUT", body: JSON.stringify(curPermit) })
         : await api("/permits", { method: "POST", body: JSON.stringify(curPermit) });
       await refresh();
-      toast("Permit " + saved.ptwNo + " saved. Create the TRA, then reopen the permit to link it.", "ok");
-      const blank = blankTra();
-      blank.workDescription = curPermit.workDescription;
-      blank.equipment = curPermit.equipmentToWorkOn || "";
-      blank.location = curPermit.areaLocation || "";
-      curTra = blank;
-      openTraEditorPrepared();
-    } catch (e) { toast("Could not save permit: " + e.message, "err"); }
+      curPermit = JSON.parse(JSON.stringify(permits.find(p => p.id === saved.id)));
+      return saved;
+    } catch (e) { toast("Could not save permit: " + e.message, "err"); return false; }
+  }
+  // From the permit editor: save the permit as a draft, then start a new TRA.
+  async function newTraFromPermit() {
+    const saved = await persistPermitDraft();
+    if (!saved) return;
+    toast("Permit " + saved.ptwNo + " saved. Create the TRA, then reopen the permit to link it.", "ok");
+    const blank = blankTra();
+    blank.workDescription = curPermit.workDescription;
+    blank.equipment = curPermit.equipmentToWorkOn || "";
+    blank.location = curPermit.areaLocation || "";
+    curTra = blank;
+    openTraEditorPrepared();
+  }
+  async function editLinkedTra() {
+    const linked = tras.find(t => t.traRef === curPermit.traNo);
+    if (!linked) return;
+    const saved = await persistPermitDraft();
+    if (!saved) return;
+    toast("Permit " + saved.ptwNo + " saved. Editing its TRA.", "ok");
+    openTraEditor(linked.id);
   }
   function openTraEditorPrepared() {
     $("#tra-editor-title").textContent = "New Task Risk Assessment";
@@ -832,6 +1122,12 @@
         case "delete-permit": deletePermit(); break;
         case "print-permit": window.print(); break;
         case "new-tra-from-permit": newTraFromPermit(); break;
+        case "edit-linked-tra": editLinkedTra(); break;
+        case "add-take5-member": curPermit.take5.members.push({}); renderRows("take5-members", curPermit.take5.members, TAKE5_COLS, true); break;
+        case "add-hw-operator": curPermit.hotWorkClearance.operators.push({}); renderRows("hw-operators", curPermit.hotWorkClearance.operators, HWOP_COLS, false); break;
+        case "add-hw-firewatch": curPermit.hotWorkClearance.fireWatch.push({}); renderRows("hw-firewatch", curPermit.hotWorkClearance.fireWatch, HWOP_COLS, false); break;
+        case "add-iso-mech": curPermit.energyIsolation.mechanical.push({}); renderRows("iso-mech", curPermit.energyIsolation.mechanical, ISO_COLS, true); break;
+        case "add-iso-elec": curPermit.energyIsolation.electrical.push({}); renderRows("iso-elec", curPermit.energyIsolation.electrical, ISO_COLS, true); break;
         case "new-tra": openTraEditor(null); break;
         case "save-tra": saveTra(); break;
         case "cancel-tra": renderTraRegister(); showView("tras"); break;
