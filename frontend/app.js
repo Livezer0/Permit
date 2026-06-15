@@ -3,7 +3,8 @@
 (function () {
   "use strict";
 
-  const API = (window.PTW_API_BASE || "http://localhost:4000") + "/api";
+  // Empty base => same-origin (e.g. when the backend serves the frontend).
+  const API = (window.PTW_API_BASE || "") + "/api";
 
   /* ---------- Fallback domain model (overridden by /api/meta) ---------- */
   let META = {

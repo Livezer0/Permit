@@ -11,6 +11,10 @@ npm start          # http://localhost:4000
 npm run dev        # auto-restart on changes
 ```
 
+This serves both the **UI** (`/`) and the **API** (`/api`) on one port — open
+http://localhost:4000/ in a browser. (If `../frontend` is absent, only the API
+is served; point `PTW_FRONTEND_DIR` elsewhere to override the location.)
+
 Configuration via environment variables (see `.env.example`):
 
 | Variable       | Default         | Purpose                                   |

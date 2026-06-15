@@ -63,24 +63,38 @@ you can export a filled‑in form that matches the original document.
 
 ## Running it
 
-You need two processes: the API and a static server for the frontend.
+### Easiest: one command, one port
 
-**1. Backend (API + database):**
+The backend also serves the frontend, so you only need to run **one** thing:
+
 ```bash
 cd backend
 npm install
-npm start            # http://localhost:4000
+npm start
 ```
+
+Then open **http://localhost:4000/** in your browser. (The terminal will sit on
+`PTW/TRA app running on http://localhost:4000` — that's expected; the page opens
+in the browser, not the terminal.)
+
 The SQLite database is created at `backend/data/ptw.db` on first run and seeded
 with one example TRA and one linked permit.
 
-**2. Frontend:**
+### Optional: run the frontend separately
+
+If you'd rather serve the frontend on its own (e.g. with a different dev server),
+run the backend as above, then in another terminal:
+
 ```bash
 cd frontend
 python3 -m http.server 5173
-# open http://localhost:5173
 ```
-If the API isn't on `http://localhost:4000`, edit `frontend/config.js`.
+
+…and set the API URL in `frontend/config.js`:
+```js
+window.PTW_API_BASE = "http://localhost:4000";
+```
+Leave it empty (`""`) when the backend serves the frontend (same origin).
 
 ## API
 
