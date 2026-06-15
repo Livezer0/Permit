@@ -410,3 +410,5 @@ input.score::-webkit-inner-spin-button { opacity: .4; }
   .sheet-landscape, .sheet-portrait { width: auto; max-width: none; }
   .cell-in { background: transparent !important; }
 }
+.ptw-hint { font-size: 11px; color: #555; font-style: italic; padding: 6px 2px; }
+#doc-select.clears .tick { font-weight: 600; }

@@ -444,10 +444,135 @@
   function lc(label, path, attrs) { return `<div class="mini-lbl">${label}</div>${inp(path, attrs)}`; }
   function lcTa(label, path) { return `<div class="mini-lbl">${label}</div>${txt(path)}`; }
 
+  // Supporting documents / permits that can be attached to a Permit to Work.
+  const DOCS = [
+    { key: "tra", label: "Task Risk Assessment (TRA)" },
+    { key: "gasTesting", label: "Gas Testing" },
+    { key: "loto", label: "Energy Isolation (LOTO)" },
+    { key: "hotWorks", label: "Hot Works" },
+    { key: "confinedSpace", label: "Confined Space Entry" },
+    { key: "workingAtHeights", label: "Working at Heights" },
+    { key: "excavation", label: "Excavation" },
+    { key: "lifting", label: "Lifting Operation" },
+    { key: "fireSuppression", label: "Fire/Gas System Impairment" }
+  ];
+  function docOn(key) {
+    if (key === "tra") return curPermit.traRequired != null ? !!curPermit.traRequired : !!curPermit.traNo;
+    if (key === "gasTesting") return curPermit.gasTestingRequired === "Yes";
+    return !!(curPermit.clearances && curPermit.clearances[key]);
+  }
+  function setDoc(key, val) {
+    if (key === "tra") curPermit.traRequired = val;
+    else if (key === "gasTesting") curPermit.gasTestingRequired = val ? "Yes" : "No";
+    else { curPermit.clearances = curPermit.clearances || {}; curPermit.clearances[key] = val; }
+  }
+
+  function traBlock() {
+    const opts = `<option value="">— select an existing TRA —</option>` +
+      tras.map(t => `<option value="${esc(t.traRef)}">${esc(t.traRef)} — ${esc(t.workDescription || "")}</option>`).join("");
+    return `<div class="sec-bar">Task Risk Assessment (TRA)</div>
+      <table class="ptw"><tr>
+        <td colspan="2"><div class="mini-lbl">Linked TRA No.</div><select class="cell-in" data-k="traNo">${opts}</select></td>
+        <td colspan="2" class="noprint" style="vertical-align:bottom">
+          <button type="button" class="btn ghost small" data-action="new-tra-from-permit">+ Create new TRA</button></td>
+      </tr></table>`;
+  }
+  function gasBlock() {
+    return `<div class="sec-bar">Section 2.0: GAS TESTING (Permit Issuer &amp; Gas Tester)</div>
+      <table class="ptw">
+        <tr><td colspan="2">${lc("Gas Tester Name &amp; Signature", "gasTesterName")}</td>
+            <td colspan="2">${lc("Gas Monitoring Log No.", "gasMonitoringLogNo")}</td></tr>
+        <tr><td>${lc("%O2 (19.5–23.5%)", "o2")}</td><td>${lc("H2S (0 ppm)", "h2s")}</td>
+            <td>${lc("LEL (0%)", "lel")}</td><td>${lc("CO (0 ppm)", "co")}</td></tr>
+        <tr><td colspan="4">${lc("Other Gases", "otherGases")}</td></tr>
+      </table>`;
+  }
+  function lotoBlock() {
+    return `<div class="sec-bar">Section 4.0: LOCK-OUT, TAG-OUT (Isolation Officer)</div>
+      <table class="ptw">
+        <tr><td>${lc("Electrical Isolation — Officer", "electricalIsolationOfficer")}</td>
+          <td>${lc("Date", "electricalIsolationDate", 'type="date"')}</td>
+          <td>${lc("Time", "electricalIsolationTime", 'type="time"')}</td>
+          <td rowspan="3">${lcTa("Special Measures for Isolation", "isolationSpecialMeasures")}</td></tr>
+        <tr><td>${lc("Mechanical Isolation — Officer", "mechanicalIsolationOfficer")}</td>
+          <td>${lc("Date", "mechanicalIsolationDate", 'type="date"')}</td>
+          <td>${lc("Time", "mechanicalIsolationTime", 'type="time"')}</td></tr>
+        <tr><td>${lc("Zero Energy Test — Officer", "zeroEnergyTestOfficer")}</td>
+          <td>${lc("Date", "zeroEnergyTestDate", 'type="date"')}</td>
+          <td>${lc("Time", "zeroEnergyTestTime", 'type="time"')}</td></tr>
+      </table>`;
+  }
+  function hotWorksBlock() {
+    return `<div class="sec-bar">Hot Works</div>
+      <table class="ptw">
+        <tr><td>${lc("Fire watch (name)", "fireWatchName")}</td><td>${lc("Fire watch duration", "fireWatchDuration")}</td>
+            <td colspan="2">${lc("Fire extinguisher location", "extinguisherLocation")}</td></tr>
+        <tr><td colspan="4">${lcTa("Hot work precautions", "hotWorkPrecautions")}</td></tr>
+      </table>`;
+  }
+  function confinedSpaceBlock() {
+    return `<div class="sec-bar">Confined Space Entry</div>
+      <table class="ptw">
+        <tr><td>${lc("Standby attendant", "csAttendant")}</td><td>${lc("Entry/Exit log no.", "csEntryLogNo")}</td>
+            <td colspan="2">${lc("Continuous gas monitoring?", "csGasMonitoring")}</td></tr>
+        <tr><td colspan="4">${lcTa("Rescue plan", "csRescuePlan")}</td></tr>
+      </table>`;
+  }
+  function wahBlock() {
+    return `<div class="sec-bar">Working at Heights</div>
+      <table class="ptw">
+        <tr><td colspan="2">${lc("Access equipment (scaffold / MEWP / ladder)", "wahAccessEquipment")}</td>
+            <td colspan="2">${lc("Fall protection", "wahFallProtection")}</td></tr>
+        <tr><td colspan="4">${lcTa("Rescue plan", "wahRescuePlan")}</td></tr>
+      </table>`;
+  }
+  function excavationBlock() {
+    return `<div class="sec-bar">Excavation</div>
+      <table class="ptw">
+        <tr><td>${lc("Excavation depth", "excDepth")}</td><td>Underground services located? ${yn("excServicesLocated")}</td>
+            <td colspan="2">${lc("Shoring / support", "excShoring")}</td></tr>
+        <tr><td colspan="4">${lcTa("Precautions", "excPrecautions")}</td></tr>
+      </table>`;
+  }
+  function liftingBlock() {
+    return `<div class="sec-bar">Lifting Operation</div>
+      <table class="ptw">
+        <tr><td>${lc("Lift plan ref.", "liftPlanRef")}</td><td>${lc("SWL / load weight", "liftSWL")}</td>
+            <td>${lc("Equipment cert. ref.", "liftEquipmentCert")}</td><td>${lc("Banksman / signaller", "liftBanksman")}</td></tr>
+      </table>`;
+  }
+  function impairmentBlock() {
+    return `<div class="sec-bar">Fire / Gas Detection &amp; Suppression Impairment</div>
+      <table class="ptw">
+        <tr><td colspan="2">${lc("Affected Areas", "affectedAreas")}</td>
+            <td colspan="2">${lc("Others (specify)", "othersSpecify")}</td></tr>
+        <tr><td colspan="4">${lcTa("Equipment &amp; impairment description", "impairmentDescription")}</td></tr>
+      </table>`;
+  }
+  function condBlocksHtml() {
+    let h = "";
+    if (docOn("tra")) h += traBlock();
+    if (docOn("gasTesting")) h += gasBlock();
+    if (docOn("loto")) h += lotoBlock();
+    if (docOn("hotWorks")) h += hotWorksBlock();
+    if (docOn("confinedSpace")) h += confinedSpaceBlock();
+    if (docOn("workingAtHeights")) h += wahBlock();
+    if (docOn("excavation")) h += excavationBlock();
+    if (docOn("lifting")) h += liftingBlock();
+    if (docOn("fireSuppression")) h += impairmentBlock();
+    if (!h) h = `<p class="ptw-hint">No supporting documents selected yet — tick the items above that apply to this job and their forms will appear here.</p>`;
+    return h;
+  }
+  function renderConditional() {
+    const c = $("#ptw-conditional");
+    if (!c) return;
+    c.innerHTML = condBlocksHtml();
+    bindSheet(c, curPermit);
+    const t = $('[data-k="traNo"]', c); if (t) t.value = curPermit.traNo || "";
+  }
+
   function buildPermitSheet() {
     const body = $("#permit-form-body");
-    const traOpts = `<option value="">— select TRA —</option>` +
-      tras.map(t => `<option value="${esc(t.traRef)}">${esc(t.traRef)} — ${esc(t.workDescription || "")}</option>`).join("");
     const statusOpts = META.permitStatuses.map(s => `<option value="${s}">${s}</option>`).join("");
 
     body.innerHTML = `
@@ -458,8 +583,7 @@
             <div class="permit-class">${cls("Scheduled")}${cls("Emergency")}${cls("Outage")}</div></td>
           <td class="lbl">PTW No.:</td><td>${inp("ptwNo", "disabled")}</td></tr>
         <tr><td class="lbl">Work Order No.:</td><td>${inp("workOrderNo")}</td></tr>
-        <tr><td class="lbl">TRA No.:</td><td><select class="cell-in" data-k="traNo">${traOpts}</select></td></tr>
-        <tr><td class="lbl">Status:</td><td colspan="2"><select class="cell-in" data-k="status">${statusOpts}</select></td></tr>
+        <tr><td class="lbl">Status:</td><td><select class="cell-in" data-k="status">${statusOpts}</select></td></tr>
       </table>
       <p class="ptw-note">Note: Put N/A if not applicable.</p>
 
@@ -483,43 +607,13 @@
           <td>${lc("MOC Ref. No. (or N/A)", "mocRef")}</td></tr>
       </table>
 
-      <div class="sec-bar">Section 2.0: GAS TESTING (Permit Issuer &amp; Gas Tester)</div>
-      <table class="ptw">
-        <tr>
-          <td>Gas testing required? ${yn("gasTestingRequired")}</td>
-          <td colspan="2">${lc("Gas Tester Name &amp; Signature", "gasTesterName")}</td>
-          <td>${lc("Gas Monitoring Log No.", "gasMonitoringLogNo")}</td></tr>
-        <tr>
-          <td>${lc("%O2 (19.5–23.5%)", "o2")}</td>
-          <td>${lc("H2S (0 ppm)", "h2s")}</td>
-          <td>${lc("LEL (0%)", "lel")}</td>
-          <td>${lc("CO (0 ppm)", "co")}</td></tr>
-        <tr><td colspan="4">${lc("Other Gases", "otherGases")}</td></tr>
-      </table>
+      <div class="sec-bar">Applicable Permits &amp; Documents — tick what this job requires</div>
+      <table class="ptw"><tr><td colspan="4" class="clears" id="doc-select"></td></tr></table>
 
-      <div class="sec-bar">Section 3.0: CLEARANCES &amp; SPECIAL MEASURES (Permit Issuer)</div>
-      <table class="ptw">
-        <tr><td colspan="4" class="clears">${META.clearances.map(c => ck("clearances." + c.key, c.label)).join("")}</td></tr>
-        <tr>
-          <td colspan="2">${lc("Others (specify)", "othersSpecify")}</td>
-          <td colspan="2">${lc("Affected Areas", "affectedAreas")}</td></tr>
-        <tr><td colspan="4">${lcTa("Protective Safety System Impairment — equipment &amp; description", "impairmentDescription")}</td></tr>
-        <tr><td colspan="4">${lcTa("Special measures / requirements (indicate N/A if none)", "specialMeasures")}</td></tr>
-      </table>
+      <div id="ptw-conditional"></div>
 
-      <div class="sec-bar">Section 4.0: LOCK-OUT, TAG-OUT (Isolation Officer)</div>
-      <table class="ptw">
-        <tr><td>${lc("Electrical Isolation — Officer", "electricalIsolationOfficer")}</td>
-          <td>${lc("Date", "electricalIsolationDate", 'type="date"')}</td>
-          <td>${lc("Time", "electricalIsolationTime", 'type="time"')}</td>
-          <td rowspan="3">${lcTa("Special Measures for Isolation", "isolationSpecialMeasures")}</td></tr>
-        <tr><td>${lc("Mechanical Isolation — Officer", "mechanicalIsolationOfficer")}</td>
-          <td>${lc("Date", "mechanicalIsolationDate", 'type="date"')}</td>
-          <td>${lc("Time", "mechanicalIsolationTime", 'type="time"')}</td></tr>
-        <tr><td>${lc("Zero Energy Test — Officer", "zeroEnergyTestOfficer")}</td>
-          <td>${lc("Date", "zeroEnergyTestDate", 'type="date"')}</td>
-          <td>${lc("Time", "zeroEnergyTestTime", 'type="time"')}</td></tr>
-      </table>
+      <div class="sec-bar">Special Measures &amp; Permit Conditions</div>
+      <table class="ptw"><tr><td colspan="4">${lcTa("Special measures / requirements (indicate N/A if none)", "specialMeasures")}</td></tr></table>
 
       <div class="sec-bar">Section 5.0: COMMENCEMENT OF WORK (Permit Issuer)</div>
       <table class="ptw">
@@ -577,11 +671,9 @@
       </table>
     </div></div>`;
 
-    // permit class tick boxes are exclusive — wire manually
     const refIn = $('[data-k="ptwNo"]', body); if (refIn) refIn.value = curPermit.ptwNo || "";
     bindSheet(body, curPermit);
     $('[data-k="status"]', body).value = curPermit.status || "Draft";
-    $('[data-k="traNo"]', body).value = curPermit.traNo || "";
     $$('[data-class]', body).forEach(cb => {
       const v = cb.getAttribute("data-class");
       cb.checked = curPermit.permitClass === v;
@@ -590,6 +682,16 @@
         $$('[data-class]', body).forEach(ob => { if (ob !== cb) ob.checked = false; });
       });
     });
+
+    // "Applicable Permits & Documents" picker drives which forms appear below.
+    const dsel = $("#doc-select", body);
+    DOCS.forEach(d => {
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = docOn(d.key);
+      cb.addEventListener("change", () => { setDoc(d.key, cb.checked); renderConditional(); });
+      dsel.appendChild(el("label", { class: "tick" }, [cb, " " + d.label]));
+    });
+    renderConditional();
   }
 
   function openPermitEditor(id) {
@@ -617,6 +719,34 @@
     if (!confirm("Delete " + curPermit.ptwNo + "?")) return;
     try { await api("/permits/" + curPermit.id, { method: "DELETE" }); await refresh(); toast("Deleted."); renderPermitRegister(); showView("permits"); }
     catch (e) { toast("Delete failed: " + e.message, "err"); }
+  }
+
+  // From the permit editor: save the permit as a draft, then start a new TRA.
+  async function newTraFromPermit() {
+    if (!curPermit.workDescription || !curPermit.workDescription.trim() ||
+        !curPermit.permitReceiver || !curPermit.permitReceiver.trim()) {
+      toast("Enter Work Description and Permit Receiver first, so the permit can be saved while you create the TRA.", "err");
+      return;
+    }
+    try {
+      const saved = curPermit.id ? await api("/permits/" + curPermit.id, { method: "PUT", body: JSON.stringify(curPermit) })
+        : await api("/permits", { method: "POST", body: JSON.stringify(curPermit) });
+      await refresh();
+      toast("Permit " + saved.ptwNo + " saved. Create the TRA, then reopen the permit to link it.", "ok");
+      const blank = blankTra();
+      blank.workDescription = curPermit.workDescription;
+      blank.equipment = curPermit.equipmentToWorkOn || "";
+      blank.location = curPermit.areaLocation || "";
+      curTra = blank;
+      openTraEditorPrepared();
+    } catch (e) { toast("Could not save permit: " + e.message, "err"); }
+  }
+  function openTraEditorPrepared() {
+    $("#tra-editor-title").textContent = "New Task Risk Assessment";
+    $("#tra-editor-no").textContent = "TRA reference assigned on save";
+    $("#tra-delete").classList.add("hidden");
+    buildTraSheet();
+    showView("tra-editor");
   }
 
   /* ========================================================
@@ -701,6 +831,7 @@
         case "cancel-permit": renderPermitRegister(); showView("permits"); break;
         case "delete-permit": deletePermit(); break;
         case "print-permit": window.print(); break;
+        case "new-tra-from-permit": newTraFromPermit(); break;
         case "new-tra": openTraEditor(null); break;
         case "save-tra": saveTra(); break;
         case "cancel-tra": renderTraRegister(); showView("tras"); break;

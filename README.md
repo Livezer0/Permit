@@ -42,13 +42,17 @@ Permit/
   auxiliary parties — and the **approver** sign‑off block.
 
 ### Permit to Work (PTW)
-Permit class (Scheduled / Emergency / Outage), PTW no. (auto `PTW-<year>-NNN`),
-Work Order no. and linked TRA no., followed by the ten form sections:
+Permit class (Scheduled / Emergency / Outage), PTW no. (auto `PTW-<year>-NNN`)
+and Work Order no., followed by Section 1 (Application).
 
-1. Application · 2. Gas Testing · 3. Clearances & Special Measures ·
-4. Lock‑out / Tag‑out · 5. Commencement of Work · 6. Cancellation & Suspension ·
-7. Worksite Turn Over · 8. Turnover Review · 9. Restoration to Operational
-Readiness · 10. Closeout.
+After the application details, an **"Applicable Permits & Documents"** picker
+lets you tick which supporting forms the job requires — **Task Risk Assessment
+(TRA)**, Gas Testing, Energy Isolation (LOTO), Hot Works, Confined Space Entry,
+Working at Heights, Excavation, Lifting Operation, Fire/Gas System Impairment.
+Only the ticked items expand into fillable sections, so you fill in exactly what
+applies. The TRA item links an existing risk assessment (or lets you create a new
+one). The core sections (Commencement, Cancellation/Suspension, Turn Over,
+Review, Restoration, Closeout) are always present.
 
 Permit status workflow: Draft → Submitted → Approved → Active →
 Suspended / Cancelled → Closed.
