@@ -1,0 +1,13 @@
+{
+  "name": "Permit to Work",
+  "short_name": "PTW",
+  "description": "Permit to Work register and task risk assessments",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1623",
+  "theme_color": "#0f1623",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

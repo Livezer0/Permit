@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0f1623"/>
+  <path d="M256 96l132 56v96c0 84-56 150-132 168-76-18-132-84-132-168v-96z" fill="#2f6df6"/>
+  <path d="M256 150l84 36v66c0 54-36 96-84 110-48-14-84-56-84-110v-66z" fill="#0f1623"/>
+  <text x="256" y="316" font-family="Arial, sans-serif" font-size="150" font-weight="bold" fill="#e7edf5" text-anchor="middle">PTW</text>
+</svg>
