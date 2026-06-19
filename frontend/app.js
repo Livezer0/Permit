@@ -1050,16 +1050,33 @@
     return b;
   }
 
+  // Status groupings for the permit "compilation".
+  const STATUS_GROUPS = [
+    { key: "live", label: "Live", statuses: ["Draft", "Submitted", "Approved", "Active"] },
+    { key: "suspended", label: "Suspended", statuses: ["Suspended"] },
+    { key: "closed", label: "Closed", statuses: ["Closed", "Cancelled"] }
+  ];
+  function groupOf(status) {
+    const g = STATUS_GROUPS.find(gr => gr.statuses.includes(status));
+    return g ? g.key : "live";
+  }
   function renderPermitRegister() {
     const fS = $("#permit-filter-status"); if (fS.children.length <= 1) META.permitStatuses.forEach(s => fS.appendChild(el("option", null, [s])));
     const fC = $("#permit-filter-class"); if (fC.children.length <= 1) META.permitClasses.forEach(c => fC.appendChild(el("option", null, [c])));
     const stats = $("#permit-stats"); stats.innerHTML = "";
-    const by = s => permits.filter(p => p.status === s).length;
+    const inGroup = key => permits.filter(p => groupOf(p.status) === key).length;
     stats.appendChild(statTile(permits.length, "Total"));
-    stats.appendChild(statTile(by("Active"), "Active"));
-    stats.appendChild(statTile(by("Submitted"), "Awaiting approval"));
-    stats.appendChild(statTile(by("Suspended"), "Suspended"));
+    STATUS_GROUPS.forEach(g => stats.appendChild(statTile(inGroup(g.key), g.label)));
     renderPermitRows();
+  }
+  function permitRow(p) {
+    return el("tr", { class: "clickable", onClick: () => openPermitEditor(p.id) }, [
+      el("td", null, [p.ptwNo || "–"]), el("td", null, [p.workDescription || "(untitled)"]),
+      el("td", null, [p.permitClass || "–"]), el("td", null, [p.areaLocation || "–"]),
+      el("td", null, [p.traNo || "–"]), el("td", { class: "small muted" }, [fmtDate(p.dateOfExpiry)]),
+      el("td", null, [el("span", { class: "pill " + (p.status || "Draft") }, [p.status || "Draft"])]),
+      el("td", null, [el("button", { class: "btn ghost small", onClick: e => { e.stopPropagation(); openPermitEditor(p.id); } }, ["Open"])])
+    ]);
   }
   function renderPermitRows() {
     const q = $("#permit-search").value.trim().toLowerCase();
@@ -1068,13 +1085,15 @@
       .filter(p => !q || [p.ptwNo, p.workDescription, p.areaLocation, p.permitReceiver, p.traNo].some(v => (v || "").toLowerCase().includes(q)));
     const tb = $("#permit-tbody"); tb.innerHTML = "";
     $("#permit-empty").classList.toggle("hidden", rows.length > 0);
-    rows.forEach(p => tb.appendChild(el("tr", { class: "clickable", onClick: () => openPermitEditor(p.id) }, [
-      el("td", null, [p.ptwNo || "–"]), el("td", null, [p.workDescription || "(untitled)"]),
-      el("td", null, [p.permitClass || "–"]), el("td", null, [p.areaLocation || "–"]),
-      el("td", null, [p.traNo || "–"]), el("td", { class: "small muted" }, [fmtDate(p.dateOfExpiry)]),
-      el("td", null, [el("span", { class: "pill " + (p.status || "Draft") }, [p.status || "Draft"])]),
-      el("td", null, [el("button", { class: "btn ghost small", onClick: e => { e.stopPropagation(); openPermitEditor(p.id); } }, ["Open"])])
-    ])));
+    // Compilation: render permits grouped into Live / Suspended / Closed.
+    STATUS_GROUPS.forEach(g => {
+      const inGroup = rows.filter(p => groupOf(p.status) === g.key);
+      if (!inGroup.length) return;
+      tb.appendChild(el("tr", { class: "group-row" }, [
+        el("td", { class: "group-head group-" + g.key, colspan: "8" }, [g.label + " — " + inGroup.length])
+      ]));
+      inGroup.forEach(p => tb.appendChild(permitRow(p)));
+    });
   }
   function renderTraRegister() {
     const fL = $("#tra-filter-level"); if (fL.children.length <= 1) META.levelOrder.forEach(k => fL.appendChild(el("option", { value: META.levels[k].label }, [META.levels[k].label])));

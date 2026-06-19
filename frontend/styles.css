@@ -435,3 +435,12 @@ input.score::-webkit-inner-spin-button { opacity: .4; }
   .tab-panel { display: none !important; }
   .tab-panel.active { display: block !important; }
 }
+
+/* Permit compilation groups (Live / Suspended / Closed) */
+.group-row td.group-head {
+  font-weight: 700; font-size: 12px; letter-spacing: .4px; text-transform: uppercase;
+  padding: 8px 12px; background: var(--bg-2); border-left: 3px solid var(--muted);
+}
+.group-head.group-live { border-left-color: var(--ok); color: #aef0c6; }
+.group-head.group-suspended { border-left-color: var(--risk-med); color: #f1c97a; }
+.group-head.group-closed { border-left-color: var(--muted); color: #9aa6b4; }
